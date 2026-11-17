@@ -26,6 +26,7 @@ import com.pabrik.mobile.chat.ChatViewModel
 import com.pabrik.mobile.chat.SseBus
 import com.pabrik.mobile.chat.SseBusHolder
 import com.pabrik.mobile.network.PabrikNavGraph
+import com.pabrik.mobile.workspace.WorkspaceDataViewModel
 import com.pabrik.mobile.recents.HomeViewModel
 import com.pabrik.mobile.storage.PrefsLastPositionStore
 import com.pabrik.mobile.ui.PabrikTheme
@@ -56,6 +57,10 @@ class MainActivity : ComponentActivity() {
 
                 val chatViewModel: ChatViewModel = viewModel(
                     factory = ChatViewModel.factory(application),
+                )
+
+                val workspaceDataViewModel: WorkspaceDataViewModel = viewModel(
+                    factory = WorkspaceDataViewModel.factory(application),
                 )
                 // Handed over as the flow, not sampled into a value or a `() -> ChatUiState` provider.
                 val chatState: StateFlow<ChatUiState> = chatViewModel.uiState
@@ -198,6 +203,7 @@ class MainActivity : ComponentActivity() {
                     defaultServerBaseUrl = AuthConfig.BUILD_DEFAULT_BASE_URL,
                     onChangeServer = onChangeServer,
                     onUseDefaultServer = onUseDefaultServer,
+                    workspaceDataViewModel = workspaceDataViewModel,
                 )
             }
         }

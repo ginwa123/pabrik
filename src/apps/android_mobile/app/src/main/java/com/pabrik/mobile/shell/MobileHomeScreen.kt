@@ -25,6 +25,12 @@ import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.PermanentDrawerSheet
@@ -109,6 +115,10 @@ fun MobileHomeScreen(
     /** The top-level "New Chat" row's busy flag and its tap. */
     isCreatingChat: Boolean = false,
     onNewChat: () -> Unit = {},
+    selectedWorkspaceIdForNav: String? = null,
+    onOpenDocuments: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
+    onOpenNotifications: () -> Unit = {},
 ) {
     val initialResolvedWorkspaceId = initialWorkspaceId
         ?.takeIf { requestedId -> workspaces.any { it.id == requestedId } }
@@ -241,6 +251,9 @@ fun MobileHomeScreen(
                     showNavigationMenu = false,
                     onOpenNavigationMenu = {},
                     onOpenNetworkInspector = onOpenNetworkInspector,
+                    onOpenDocuments = onOpenDocuments,
+                    onOpenSettings = onOpenSettings,
+                    onOpenNotifications = onOpenNotifications,
                 )
             }
         } else {
@@ -292,6 +305,9 @@ fun MobileHomeScreen(
                         }
                     },
                     onOpenNetworkInspector = onOpenNetworkInspector,
+                    onOpenDocuments = onOpenDocuments,
+                    onOpenSettings = onOpenSettings,
+                    onOpenNotifications = onOpenNotifications,
                 )
             }
         }
@@ -305,6 +321,9 @@ private fun HomeContent(
     showNavigationMenu: Boolean,
     onOpenNavigationMenu: () -> Unit,
     onOpenNetworkInspector: () -> Unit,
+    onOpenDocuments: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
+    onOpenNotifications: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // One clock for the whole composition rather than a fresh read inside the body below.
@@ -364,6 +383,41 @@ private fun HomeContent(
                     titleContentColor = PabrikText,
                 ),
             )
+        },
+        bottomBar = {
+            NavigationBar(
+                containerColor = PabrikBackgroundRaised,
+                contentColor = PabrikText,
+            ) {
+                NavigationBarItem(
+                    selected = true,
+                    onClick = {},
+                    icon = { Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = "Chats") },
+                    label = { Text("Chats") },
+                    modifier = Modifier.testTag("bottom_nav_chats"),
+                )
+                NavigationBarItem(
+                    selected = false,
+                    onClick = onOpenDocuments,
+                    icon = { Icon(Icons.Filled.Folder, contentDescription = "Documents") },
+                    label = { Text("Documents") },
+                    modifier = Modifier.testTag("bottom_nav_documents"),
+                )
+                NavigationBarItem(
+                    selected = false,
+                    onClick = onOpenNotifications,
+                    icon = { Icon(Icons.Filled.Notifications, contentDescription = "Notifications") },
+                    label = { Text("Alerts") },
+                    modifier = Modifier.testTag("bottom_nav_notifications"),
+                )
+                NavigationBarItem(
+                    selected = false,
+                    onClick = onOpenSettings,
+                    icon = { Icon(Icons.Filled.Settings, contentDescription = "Settings") },
+                    label = { Text("Settings") },
+                    modifier = Modifier.testTag("bottom_nav_settings"),
+                )
+            }
         },
     ) { contentPadding ->
         Box(

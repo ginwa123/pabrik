@@ -1,5 +1,5 @@
 {
-  "destinationCount": 6,
+  "destinationCount": 23,
   "destinations": [
     {
       "arguments": [],
@@ -11,7 +11,7 @@
       ],
       "deepLinks": [],
       "isStart": true,
-      "line": 443,
+      "line": 462,
       "placeholders": [],
       "route": "SHELL",
       "screens": [
@@ -36,7 +36,7 @@
         "pabrik://chat/{sessionId}"
       ],
       "isStart": false,
-      "line": 508,
+      "line": 534,
       "placeholders": [
         "sessionId"
       ],
@@ -61,7 +61,7 @@
         "pabrik://chats/{workspaceId}"
       ],
       "isStart": false,
-      "line": 595,
+      "line": 621,
       "placeholders": [
         "workspaceId"
       ],
@@ -87,7 +87,7 @@
         "pabrik://project/{workspaceId}/{itemId}"
       ],
       "isStart": false,
-      "line": 640,
+      "line": 666,
       "placeholders": [
         "workspaceId",
         "itemId"
@@ -111,7 +111,7 @@
         "pabrik://network"
       ],
       "isStart": false,
-      "line": 700,
+      "line": 726,
       "placeholders": [],
       "route": "NETWORK",
       "screens": [
@@ -133,7 +133,7 @@
         "pabrik://network/record/{recordId}"
       ],
       "isStart": false,
-      "line": 710,
+      "line": 736,
       "placeholders": [
         "recordId"
       ],
@@ -142,9 +142,445 @@
         "NetworkRecordDetailScreen"
       ],
       "template": "network/record/{recordId}"
+    },
+    {
+      "arguments": [],
+      "backAffordances": [
+        "onBack = goBack"
+      ],
+      "composables": [
+        "UserSettingsScreen"
+      ],
+      "deepLinks": [
+        "pabrik://settings"
+      ],
+      "isStart": false,
+      "line": 757,
+      "placeholders": [],
+      "route": "SETTINGS",
+      "screens": [
+        "UserSettingsScreen"
+      ],
+      "template": "settings"
+    },
+    {
+      "arguments": [
+        "ARG_WORKSPACE_ID"
+      ],
+      "backAffordances": [
+        "onBack = goBack"
+      ],
+      "composables": [
+        "WorkspaceSettingsScreen"
+      ],
+      "deepLinks": [
+        "pabrik://workspace/{workspaceId}/settings"
+      ],
+      "isStart": false,
+      "line": 768,
+      "placeholders": [
+        "workspaceId"
+      ],
+      "route": "WORKSPACE_SETTINGS",
+      "screens": [
+        "WorkspaceSettingsScreen"
+      ],
+      "template": "workspace/{workspaceId}/settings"
+    },
+    {
+      "arguments": [
+        "ARG_WORKSPACE_ID"
+      ],
+      "backAffordances": [
+        "onBack = goBack"
+      ],
+      "composables": [
+        "DocumentsScreen"
+      ],
+      "deepLinks": [
+        "pabrik://documents/{workspaceId}"
+      ],
+      "isStart": false,
+      "line": 781,
+      "placeholders": [
+        "workspaceId"
+      ],
+      "route": "DOCUMENTS",
+      "screens": [
+        "DocumentsScreen"
+      ],
+      "template": "documents/{workspaceId}"
+    },
+    {
+      "arguments": [
+        "ARG_WORKSPACE_ID",
+        "ARG_DOCUMENT_ID"
+      ],
+      "backAffordances": [
+        "onBack = goBack"
+      ],
+      "composables": [
+        "ItemFeatureScreen",
+        "FeatureSection",
+        "FeatureRow"
+      ],
+      "deepLinks": [
+        "pabrik://doc/{workspaceId}/{documentId}"
+      ],
+      "isStart": false,
+      "line": 794,
+      "placeholders": [
+        "workspaceId",
+        "documentId"
+      ],
+      "route": "DOCUMENT",
+      "screens": [
+        "ItemFeatureScreen",
+        "FeatureSection",
+        "FeatureRow"
+      ],
+      "template": "documents/{workspaceId}/{documentId}"
+    },
+    {
+      "arguments": [],
+      "backAffordances": [
+        "onBack = goBack"
+      ],
+      "composables": [
+        "NotificationsScreen"
+      ],
+      "deepLinks": [
+        "pabrik://notifications"
+      ],
+      "isStart": false,
+      "line": 817,
+      "placeholders": [],
+      "route": "NOTIFICATIONS",
+      "screens": [
+        "NotificationsScreen"
+      ],
+      "template": "notifications"
+    },
+    {
+      "arguments": [
+        "ARG_WORKSPACE_ID",
+        "ARG_ITEM_ID"
+      ],
+      "backAffordances": [
+        "onBack = goBack"
+      ],
+      "composables": [
+        "ItemFeatureScreen",
+        "FeatureSection",
+        "FeatureRow"
+      ],
+      "deepLinks": [
+        "pabrik://kanban-settings/{workspaceId}/{itemId}"
+      ],
+      "isStart": false,
+      "line": 824,
+      "placeholders": [
+        "workspaceId",
+        "itemId"
+      ],
+      "route": "KANBAN_SETTINGS",
+      "screens": [
+        "ItemFeatureScreen",
+        "FeatureSection",
+        "FeatureRow"
+      ],
+      "template": "kanban/{workspaceId}/{itemId}/settings"
+    },
+    {
+      "arguments": [
+        "ARG_WORKSPACE_ID",
+        "ARG_ITEM_ID"
+      ],
+      "backAffordances": [
+        "onBack = goBack"
+      ],
+      "composables": [
+        "ItemFeatureScreen",
+        "FeatureSection",
+        "FeatureRow"
+      ],
+      "deepLinks": [
+        "pabrik://agent/{workspaceId}/{itemId}"
+      ],
+      "isStart": false,
+      "line": 849,
+      "placeholders": [
+        "workspaceId",
+        "itemId"
+      ],
+      "route": "AGENT",
+      "screens": [
+        "ItemFeatureScreen",
+        "FeatureSection",
+        "FeatureRow"
+      ],
+      "template": "agent/{workspaceId}/{itemId}"
+    },
+    {
+      "arguments": [
+        "ARG_WORKSPACE_ID",
+        "ARG_ITEM_ID"
+      ],
+      "backAffordances": [
+        "onBack = goBack"
+      ],
+      "composables": [
+        "ItemFeatureScreen",
+        "FeatureSection",
+        "FeatureRow"
+      ],
+      "deepLinks": [
+        "pabrik://design/{workspaceId}/{itemId}"
+      ],
+      "isStart": false,
+      "line": 874,
+      "placeholders": [
+        "workspaceId",
+        "itemId"
+      ],
+      "route": "DESIGN",
+      "screens": [
+        "ItemFeatureScreen",
+        "FeatureSection",
+        "FeatureRow"
+      ],
+      "template": "design/{workspaceId}/{itemId}"
+    },
+    {
+      "arguments": [
+        "ARG_WORKSPACE_ID",
+        "ARG_ITEM_ID"
+      ],
+      "backAffordances": [
+        "onBack = goBack"
+      ],
+      "composables": [
+        "ItemFeatureScreen",
+        "FeatureSection",
+        "FeatureRow"
+      ],
+      "deepLinks": [
+        "pabrik://routine/{workspaceId}/{itemId}"
+      ],
+      "isStart": false,
+      "line": 899,
+      "placeholders": [
+        "workspaceId",
+        "itemId"
+      ],
+      "route": "ROUTINE",
+      "screens": [
+        "ItemFeatureScreen",
+        "FeatureSection",
+        "FeatureRow"
+      ],
+      "template": "routine/{workspaceId}/{itemId}"
+    },
+    {
+      "arguments": [
+        "ARG_WORKSPACE_ID",
+        "ARG_ITEM_ID"
+      ],
+      "backAffordances": [
+        "onBack = goBack"
+      ],
+      "composables": [
+        "ItemFeatureScreen",
+        "FeatureSection",
+        "FeatureRow"
+      ],
+      "deepLinks": [
+        "pabrik://git/{workspaceId}/{itemId}"
+      ],
+      "isStart": false,
+      "line": 924,
+      "placeholders": [
+        "workspaceId",
+        "itemId"
+      ],
+      "route": "GIT",
+      "screens": [
+        "ItemFeatureScreen",
+        "FeatureSection",
+        "FeatureRow"
+      ],
+      "template": "git/{workspaceId}/{itemId}"
+    },
+    {
+      "arguments": [
+        "ARG_WORKSPACE_ID"
+      ],
+      "backAffordances": [
+        "onBack = goBack"
+      ],
+      "composables": [
+        "ItemFeatureScreen"
+      ],
+      "deepLinks": [
+        "pabrik://memory/{workspaceId}"
+      ],
+      "isStart": false,
+      "line": 950,
+      "placeholders": [
+        "workspaceId"
+      ],
+      "route": "MEMORY",
+      "screens": [
+        "ItemFeatureScreen"
+      ],
+      "template": "memory/{workspaceId}"
+    },
+    {
+      "arguments": [
+        "ARG_WORKSPACE_ID"
+      ],
+      "backAffordances": [
+        "onBack = goBack"
+      ],
+      "composables": [
+        "ItemFeatureScreen"
+      ],
+      "deepLinks": [
+        "pabrik://secrets/{workspaceId}"
+      ],
+      "isStart": false,
+      "line": 968,
+      "placeholders": [
+        "workspaceId"
+      ],
+      "route": "SECRETS",
+      "screens": [
+        "ItemFeatureScreen"
+      ],
+      "template": "secrets/{workspaceId}"
+    },
+    {
+      "arguments": [
+        "ARG_WORKSPACE_ID"
+      ],
+      "backAffordances": [
+        "onBack = goBack"
+      ],
+      "composables": [
+        "ItemFeatureScreen"
+      ],
+      "deepLinks": [
+        "pabrik://members/{workspaceId}"
+      ],
+      "isStart": false,
+      "line": 986,
+      "placeholders": [
+        "workspaceId"
+      ],
+      "route": "MEMBERS",
+      "screens": [
+        "ItemFeatureScreen"
+      ],
+      "template": "members/{workspaceId}"
+    },
+    {
+      "arguments": [
+        "ARG_WORKSPACE_ID"
+      ],
+      "backAffordances": [
+        "onBack = goBack"
+      ],
+      "composables": [
+        "ItemFeatureScreen"
+      ],
+      "deepLinks": [
+        "pabrik://skills/{workspaceId}"
+      ],
+      "isStart": false,
+      "line": 1004,
+      "placeholders": [
+        "workspaceId"
+      ],
+      "route": "SKILLS",
+      "screens": [
+        "ItemFeatureScreen"
+      ],
+      "template": "skills/{workspaceId}"
+    },
+    {
+      "arguments": [
+        "ARG_WORKSPACE_ID"
+      ],
+      "backAffordances": [
+        "onBack = goBack"
+      ],
+      "composables": [
+        "ItemFeatureScreen"
+      ],
+      "deepLinks": [
+        "pabrik://mcp/{workspaceId}"
+      ],
+      "isStart": false,
+      "line": 1022,
+      "placeholders": [
+        "workspaceId"
+      ],
+      "route": "MCP",
+      "screens": [
+        "ItemFeatureScreen"
+      ],
+      "template": "mcp/{workspaceId}"
+    },
+    {
+      "arguments": [
+        "ARG_WORKSPACE_ID"
+      ],
+      "backAffordances": [
+        "onBack = goBack"
+      ],
+      "composables": [
+        "ItemFeatureScreen"
+      ],
+      "deepLinks": [
+        "pabrik://llm-config/{workspaceId}"
+      ],
+      "isStart": false,
+      "line": 1040,
+      "placeholders": [
+        "workspaceId"
+      ],
+      "route": "LLM_CONFIG",
+      "screens": [
+        "ItemFeatureScreen"
+      ],
+      "template": "llm-config/{workspaceId}"
+    },
+    {
+      "arguments": [
+        "ARG_WORKSPACE_ID"
+      ],
+      "backAffordances": [
+        "onBack = goBack"
+      ],
+      "composables": [
+        "ItemFeatureScreen"
+      ],
+      "deepLinks": [
+        "pabrik://tools/{workspaceId}"
+      ],
+      "isStart": false,
+      "line": 1058,
+      "placeholders": [
+        "workspaceId"
+      ],
+      "route": "TOOLS",
+      "screens": [
+        "ItemFeatureScreen"
+      ],
+      "template": "tools/{workspaceId}"
     }
   ],
-  "edgeCount": 23,
+  "edgeCount": 60,
   "edges": [
     {
       "hoistedFrom": "goBackToPreviousOrShell",
@@ -157,7 +593,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 195,
+          "line": 205,
           "note": "PabrikRoutes.SHELL"
         }
       ],
@@ -177,7 +613,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 285,
+          "line": 296,
           "note": "PabrikRoutes.NETWORK"
         }
       ],
@@ -197,7 +633,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 304,
+          "line": 323,
           "note": "PabrikRoutes.chats(workspaceId)"
         }
       ],
@@ -217,7 +653,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 304,
+          "line": 323,
           "note": "PabrikRoutes.chats(workspaceId)"
         }
       ],
@@ -237,7 +673,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 313,
+          "line": 332,
           "note": "PabrikRoutes.project(workspaceId, itemId)"
         }
       ],
@@ -257,7 +693,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 313,
+          "line": 332,
           "note": "PabrikRoutes.project(workspaceId, itemId)"
         }
       ],
@@ -277,7 +713,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 338,
+          "line": 357,
           "note": "PabrikRoutes.chat(sessionId)"
         }
       ],
@@ -297,7 +733,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 349,
+          "line": 368,
           "note": "PabrikRoutes.chat(chatId)"
         }
       ],
@@ -317,7 +753,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 481,
+          "line": 500,
           "note": "PabrikRoutes.chat(sessionId)"
         }
       ],
@@ -325,6 +761,66 @@
       "target": "chat/{sessionId}",
       "trigger": "opening a chat from a list",
       "via": "PabrikRoutes.chat(sessionId)"
+    },
+    {
+      "hoistedFrom": null,
+      "kind": "push",
+      "label": "app → documents/{workspaceId}",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 525,
+          "note": "PabrikRoutes.documents(it)"
+        }
+      ],
+      "source": "app",
+      "target": "documents/{workspaceId}",
+      "trigger": "the drawer's “See all chats” row",
+      "via": "PabrikRoutes.documents(it)"
+    },
+    {
+      "hoistedFrom": null,
+      "kind": "push",
+      "label": "app → settings",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 528,
+          "note": "PabrikRoutes.SETTINGS"
+        }
+      ],
+      "source": "app",
+      "target": "settings",
+      "trigger": "the drawer's “See all chats” row",
+      "via": "PabrikRoutes.SETTINGS"
+    },
+    {
+      "hoistedFrom": null,
+      "kind": "push",
+      "label": "app → notifications",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 529,
+          "note": "PabrikRoutes.NOTIFICATIONS"
+        }
+      ],
+      "source": "app",
+      "target": "notifications",
+      "trigger": "the drawer's “See all chats” row",
+      "via": "PabrikRoutes.NOTIFICATIONS"
     },
     {
       "hoistedFrom": null,
@@ -337,7 +833,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 633,
+          "line": 659,
           "note": "PabrikRoutes.chat(sessionId)"
         }
       ],
@@ -357,7 +853,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 673,
+          "line": 699,
           "note": "PabrikRoutes.chat(sessionId)"
         }
       ],
@@ -377,7 +873,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 706,
+          "line": 732,
           "note": "PabrikRoutes.recordDetail(recordId)"
         }
       ],
@@ -397,7 +893,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 800,
+          "line": 1146,
           "note": "PabrikRoutes.chat(sessionId)"
         }
       ],
@@ -417,7 +913,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 508,
+          "line": 534,
           "note": "pabrik://chat/{sessionId}"
         }
       ],
@@ -437,7 +933,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 595,
+          "line": 621,
           "note": "pabrik://chats/{workspaceId}"
         }
       ],
@@ -457,7 +953,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 640,
+          "line": 666,
           "note": "pabrik://project/{workspaceId}/{itemId}"
         }
       ],
@@ -477,7 +973,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 700,
+          "line": 726,
           "note": "pabrik://network"
         }
       ],
@@ -497,7 +993,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 710,
+          "line": 736,
           "note": "pabrik://network/record/{recordId}"
         }
       ],
@@ -505,6 +1001,346 @@
       "target": "network/record/{recordId}",
       "trigger": "`adb shell am start -a android.intent.action.VIEW -d pabrik://network/record/{recordId}`",
       "via": "pabrik://network/record/{recordId}"
+    },
+    {
+      "hoistedFrom": null,
+      "kind": "deep-link",
+      "label": "__deeplink__ → settings",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 757,
+          "note": "pabrik://settings"
+        }
+      ],
+      "source": "__deeplink__",
+      "target": "settings",
+      "trigger": "`adb shell am start -a android.intent.action.VIEW -d pabrik://settings`",
+      "via": "pabrik://settings"
+    },
+    {
+      "hoistedFrom": null,
+      "kind": "deep-link",
+      "label": "__deeplink__ → workspace/{workspaceId}/settings",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 768,
+          "note": "pabrik://workspace/{workspaceId}/settings"
+        }
+      ],
+      "source": "__deeplink__",
+      "target": "workspace/{workspaceId}/settings",
+      "trigger": "`adb shell am start -a android.intent.action.VIEW -d pabrik://workspace/{workspaceId}/settings`",
+      "via": "pabrik://workspace/{workspaceId}/settings"
+    },
+    {
+      "hoistedFrom": null,
+      "kind": "deep-link",
+      "label": "__deeplink__ → documents/{workspaceId}",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 781,
+          "note": "pabrik://documents/{workspaceId}"
+        }
+      ],
+      "source": "__deeplink__",
+      "target": "documents/{workspaceId}",
+      "trigger": "`adb shell am start -a android.intent.action.VIEW -d pabrik://documents/{workspaceId}`",
+      "via": "pabrik://documents/{workspaceId}"
+    },
+    {
+      "hoistedFrom": null,
+      "kind": "deep-link",
+      "label": "__deeplink__ → documents/{workspaceId}/{documentId}",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 794,
+          "note": "pabrik://doc/{workspaceId}/{documentId}"
+        }
+      ],
+      "source": "__deeplink__",
+      "target": "documents/{workspaceId}/{documentId}",
+      "trigger": "`adb shell am start -a android.intent.action.VIEW -d pabrik://doc/{workspaceId}/{documentId}`",
+      "via": "pabrik://doc/{workspaceId}/{documentId}"
+    },
+    {
+      "hoistedFrom": null,
+      "kind": "deep-link",
+      "label": "__deeplink__ → notifications",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 817,
+          "note": "pabrik://notifications"
+        }
+      ],
+      "source": "__deeplink__",
+      "target": "notifications",
+      "trigger": "`adb shell am start -a android.intent.action.VIEW -d pabrik://notifications`",
+      "via": "pabrik://notifications"
+    },
+    {
+      "hoistedFrom": null,
+      "kind": "deep-link",
+      "label": "__deeplink__ → kanban/{workspaceId}/{itemId}/settings",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 824,
+          "note": "pabrik://kanban-settings/{workspaceId}/{itemId}"
+        }
+      ],
+      "source": "__deeplink__",
+      "target": "kanban/{workspaceId}/{itemId}/settings",
+      "trigger": "`adb shell am start -a android.intent.action.VIEW -d pabrik://kanban-settings/{workspaceId}/{itemId}`",
+      "via": "pabrik://kanban-settings/{workspaceId}/{itemId}"
+    },
+    {
+      "hoistedFrom": null,
+      "kind": "deep-link",
+      "label": "__deeplink__ → agent/{workspaceId}/{itemId}",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 849,
+          "note": "pabrik://agent/{workspaceId}/{itemId}"
+        }
+      ],
+      "source": "__deeplink__",
+      "target": "agent/{workspaceId}/{itemId}",
+      "trigger": "`adb shell am start -a android.intent.action.VIEW -d pabrik://agent/{workspaceId}/{itemId}`",
+      "via": "pabrik://agent/{workspaceId}/{itemId}"
+    },
+    {
+      "hoistedFrom": null,
+      "kind": "deep-link",
+      "label": "__deeplink__ → design/{workspaceId}/{itemId}",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 874,
+          "note": "pabrik://design/{workspaceId}/{itemId}"
+        }
+      ],
+      "source": "__deeplink__",
+      "target": "design/{workspaceId}/{itemId}",
+      "trigger": "`adb shell am start -a android.intent.action.VIEW -d pabrik://design/{workspaceId}/{itemId}`",
+      "via": "pabrik://design/{workspaceId}/{itemId}"
+    },
+    {
+      "hoistedFrom": null,
+      "kind": "deep-link",
+      "label": "__deeplink__ → routine/{workspaceId}/{itemId}",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 899,
+          "note": "pabrik://routine/{workspaceId}/{itemId}"
+        }
+      ],
+      "source": "__deeplink__",
+      "target": "routine/{workspaceId}/{itemId}",
+      "trigger": "`adb shell am start -a android.intent.action.VIEW -d pabrik://routine/{workspaceId}/{itemId}`",
+      "via": "pabrik://routine/{workspaceId}/{itemId}"
+    },
+    {
+      "hoistedFrom": null,
+      "kind": "deep-link",
+      "label": "__deeplink__ → git/{workspaceId}/{itemId}",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 924,
+          "note": "pabrik://git/{workspaceId}/{itemId}"
+        }
+      ],
+      "source": "__deeplink__",
+      "target": "git/{workspaceId}/{itemId}",
+      "trigger": "`adb shell am start -a android.intent.action.VIEW -d pabrik://git/{workspaceId}/{itemId}`",
+      "via": "pabrik://git/{workspaceId}/{itemId}"
+    },
+    {
+      "hoistedFrom": null,
+      "kind": "deep-link",
+      "label": "__deeplink__ → memory/{workspaceId}",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 950,
+          "note": "pabrik://memory/{workspaceId}"
+        }
+      ],
+      "source": "__deeplink__",
+      "target": "memory/{workspaceId}",
+      "trigger": "`adb shell am start -a android.intent.action.VIEW -d pabrik://memory/{workspaceId}`",
+      "via": "pabrik://memory/{workspaceId}"
+    },
+    {
+      "hoistedFrom": null,
+      "kind": "deep-link",
+      "label": "__deeplink__ → secrets/{workspaceId}",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 968,
+          "note": "pabrik://secrets/{workspaceId}"
+        }
+      ],
+      "source": "__deeplink__",
+      "target": "secrets/{workspaceId}",
+      "trigger": "`adb shell am start -a android.intent.action.VIEW -d pabrik://secrets/{workspaceId}`",
+      "via": "pabrik://secrets/{workspaceId}"
+    },
+    {
+      "hoistedFrom": null,
+      "kind": "deep-link",
+      "label": "__deeplink__ → members/{workspaceId}",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 986,
+          "note": "pabrik://members/{workspaceId}"
+        }
+      ],
+      "source": "__deeplink__",
+      "target": "members/{workspaceId}",
+      "trigger": "`adb shell am start -a android.intent.action.VIEW -d pabrik://members/{workspaceId}`",
+      "via": "pabrik://members/{workspaceId}"
+    },
+    {
+      "hoistedFrom": null,
+      "kind": "deep-link",
+      "label": "__deeplink__ → skills/{workspaceId}",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 1004,
+          "note": "pabrik://skills/{workspaceId}"
+        }
+      ],
+      "source": "__deeplink__",
+      "target": "skills/{workspaceId}",
+      "trigger": "`adb shell am start -a android.intent.action.VIEW -d pabrik://skills/{workspaceId}`",
+      "via": "pabrik://skills/{workspaceId}"
+    },
+    {
+      "hoistedFrom": null,
+      "kind": "deep-link",
+      "label": "__deeplink__ → mcp/{workspaceId}",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 1022,
+          "note": "pabrik://mcp/{workspaceId}"
+        }
+      ],
+      "source": "__deeplink__",
+      "target": "mcp/{workspaceId}",
+      "trigger": "`adb shell am start -a android.intent.action.VIEW -d pabrik://mcp/{workspaceId}`",
+      "via": "pabrik://mcp/{workspaceId}"
+    },
+    {
+      "hoistedFrom": null,
+      "kind": "deep-link",
+      "label": "__deeplink__ → llm-config/{workspaceId}",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 1040,
+          "note": "pabrik://llm-config/{workspaceId}"
+        }
+      ],
+      "source": "__deeplink__",
+      "target": "llm-config/{workspaceId}",
+      "trigger": "`adb shell am start -a android.intent.action.VIEW -d pabrik://llm-config/{workspaceId}`",
+      "via": "pabrik://llm-config/{workspaceId}"
+    },
+    {
+      "hoistedFrom": null,
+      "kind": "deep-link",
+      "label": "__deeplink__ → tools/{workspaceId}",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 1058,
+          "note": "pabrik://tools/{workspaceId}"
+        }
+      ],
+      "source": "__deeplink__",
+      "target": "tools/{workspaceId}",
+      "trigger": "`adb shell am start -a android.intent.action.VIEW -d pabrik://tools/{workspaceId}`",
+      "via": "pabrik://tools/{workspaceId}"
     },
     {
       "hoistedFrom": "goBackToPreviousOrShell",
@@ -517,7 +1353,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 508,
+          "line": 534,
           "note": "BackHandler { goBack() }"
         }
       ],
@@ -537,7 +1373,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 595,
+          "line": 621,
           "note": "onBack = goBack"
         }
       ],
@@ -557,7 +1393,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 640,
+          "line": 666,
           "note": "onBack = goBack"
         }
       ],
@@ -577,7 +1413,7 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 700,
+          "line": 726,
           "note": "onBack = goBack"
         }
       ],
@@ -597,11 +1433,351 @@
       "sites": [
         {
           "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-          "line": 710,
+          "line": 736,
           "note": "onBack = goBack"
         }
       ],
       "source": "network/record/{recordId}",
+      "target": "__back__",
+      "trigger": "onBack = goBack",
+      "via": "goBackToPreviousOrShell"
+    },
+    {
+      "hoistedFrom": "goBackToPreviousOrShell",
+      "kind": "back",
+      "label": "settings → __back__",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 757,
+          "note": "onBack = goBack"
+        }
+      ],
+      "source": "settings",
+      "target": "__back__",
+      "trigger": "onBack = goBack",
+      "via": "goBackToPreviousOrShell"
+    },
+    {
+      "hoistedFrom": "goBackToPreviousOrShell",
+      "kind": "back",
+      "label": "workspace/{workspaceId}/settings → __back__",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 768,
+          "note": "onBack = goBack"
+        }
+      ],
+      "source": "workspace/{workspaceId}/settings",
+      "target": "__back__",
+      "trigger": "onBack = goBack",
+      "via": "goBackToPreviousOrShell"
+    },
+    {
+      "hoistedFrom": "goBackToPreviousOrShell",
+      "kind": "back",
+      "label": "documents/{workspaceId} → __back__",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 781,
+          "note": "onBack = goBack"
+        }
+      ],
+      "source": "documents/{workspaceId}",
+      "target": "__back__",
+      "trigger": "onBack = goBack",
+      "via": "goBackToPreviousOrShell"
+    },
+    {
+      "hoistedFrom": "goBackToPreviousOrShell",
+      "kind": "back",
+      "label": "documents/{workspaceId}/{documentId} → __back__",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 794,
+          "note": "onBack = goBack"
+        }
+      ],
+      "source": "documents/{workspaceId}/{documentId}",
+      "target": "__back__",
+      "trigger": "onBack = goBack",
+      "via": "goBackToPreviousOrShell"
+    },
+    {
+      "hoistedFrom": "goBackToPreviousOrShell",
+      "kind": "back",
+      "label": "notifications → __back__",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 817,
+          "note": "onBack = goBack"
+        }
+      ],
+      "source": "notifications",
+      "target": "__back__",
+      "trigger": "onBack = goBack",
+      "via": "goBackToPreviousOrShell"
+    },
+    {
+      "hoistedFrom": "goBackToPreviousOrShell",
+      "kind": "back",
+      "label": "kanban/{workspaceId}/{itemId}/settings → __back__",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 824,
+          "note": "onBack = goBack"
+        }
+      ],
+      "source": "kanban/{workspaceId}/{itemId}/settings",
+      "target": "__back__",
+      "trigger": "onBack = goBack",
+      "via": "goBackToPreviousOrShell"
+    },
+    {
+      "hoistedFrom": "goBackToPreviousOrShell",
+      "kind": "back",
+      "label": "agent/{workspaceId}/{itemId} → __back__",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 849,
+          "note": "onBack = goBack"
+        }
+      ],
+      "source": "agent/{workspaceId}/{itemId}",
+      "target": "__back__",
+      "trigger": "onBack = goBack",
+      "via": "goBackToPreviousOrShell"
+    },
+    {
+      "hoistedFrom": "goBackToPreviousOrShell",
+      "kind": "back",
+      "label": "design/{workspaceId}/{itemId} → __back__",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 874,
+          "note": "onBack = goBack"
+        }
+      ],
+      "source": "design/{workspaceId}/{itemId}",
+      "target": "__back__",
+      "trigger": "onBack = goBack",
+      "via": "goBackToPreviousOrShell"
+    },
+    {
+      "hoistedFrom": "goBackToPreviousOrShell",
+      "kind": "back",
+      "label": "routine/{workspaceId}/{itemId} → __back__",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 899,
+          "note": "onBack = goBack"
+        }
+      ],
+      "source": "routine/{workspaceId}/{itemId}",
+      "target": "__back__",
+      "trigger": "onBack = goBack",
+      "via": "goBackToPreviousOrShell"
+    },
+    {
+      "hoistedFrom": "goBackToPreviousOrShell",
+      "kind": "back",
+      "label": "git/{workspaceId}/{itemId} → __back__",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 924,
+          "note": "onBack = goBack"
+        }
+      ],
+      "source": "git/{workspaceId}/{itemId}",
+      "target": "__back__",
+      "trigger": "onBack = goBack",
+      "via": "goBackToPreviousOrShell"
+    },
+    {
+      "hoistedFrom": "goBackToPreviousOrShell",
+      "kind": "back",
+      "label": "memory/{workspaceId} → __back__",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 950,
+          "note": "onBack = goBack"
+        }
+      ],
+      "source": "memory/{workspaceId}",
+      "target": "__back__",
+      "trigger": "onBack = goBack",
+      "via": "goBackToPreviousOrShell"
+    },
+    {
+      "hoistedFrom": "goBackToPreviousOrShell",
+      "kind": "back",
+      "label": "secrets/{workspaceId} → __back__",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 968,
+          "note": "onBack = goBack"
+        }
+      ],
+      "source": "secrets/{workspaceId}",
+      "target": "__back__",
+      "trigger": "onBack = goBack",
+      "via": "goBackToPreviousOrShell"
+    },
+    {
+      "hoistedFrom": "goBackToPreviousOrShell",
+      "kind": "back",
+      "label": "members/{workspaceId} → __back__",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 986,
+          "note": "onBack = goBack"
+        }
+      ],
+      "source": "members/{workspaceId}",
+      "target": "__back__",
+      "trigger": "onBack = goBack",
+      "via": "goBackToPreviousOrShell"
+    },
+    {
+      "hoistedFrom": "goBackToPreviousOrShell",
+      "kind": "back",
+      "label": "skills/{workspaceId} → __back__",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 1004,
+          "note": "onBack = goBack"
+        }
+      ],
+      "source": "skills/{workspaceId}",
+      "target": "__back__",
+      "trigger": "onBack = goBack",
+      "via": "goBackToPreviousOrShell"
+    },
+    {
+      "hoistedFrom": "goBackToPreviousOrShell",
+      "kind": "back",
+      "label": "mcp/{workspaceId} → __back__",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 1022,
+          "note": "onBack = goBack"
+        }
+      ],
+      "source": "mcp/{workspaceId}",
+      "target": "__back__",
+      "trigger": "onBack = goBack",
+      "via": "goBackToPreviousOrShell"
+    },
+    {
+      "hoistedFrom": "goBackToPreviousOrShell",
+      "kind": "back",
+      "label": "llm-config/{workspaceId} → __back__",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 1040,
+          "note": "onBack = goBack"
+        }
+      ],
+      "source": "llm-config/{workspaceId}",
+      "target": "__back__",
+      "trigger": "onBack = goBack",
+      "via": "goBackToPreviousOrShell"
+    },
+    {
+      "hoistedFrom": "goBackToPreviousOrShell",
+      "kind": "back",
+      "label": "tools/{workspaceId} → __back__",
+      "launchSingleTop": false,
+      "popInclusive": null,
+      "popUpTo": null,
+      "resolved": true,
+      "sites": [
+        {
+          "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+          "line": 1058,
+          "note": "onBack = goBack"
+        }
+      ],
+      "source": "tools/{workspaceId}",
       "target": "__back__",
       "trigger": "onBack = goBack",
       "via": "goBackToPreviousOrShell"
@@ -610,212 +1786,8 @@
   "errorCount": 0,
   "findings": [
     {
-      "code": "route_constant_unused",
-      "detail": "`settings` is declared but no `composable(...)` uses it. Either the screen is gone and the constant outlived it, or the screen was never wired.",
-      "severity": "warn",
-      "site": {
-        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 106,
-        "note": "SETTINGS"
-      },
-      "subject": "graph",
-      "title": "`PabrikRoutes.SETTINGS` is never a destination"
-    },
-    {
-      "code": "route_constant_unused",
-      "detail": "`workspace/{workspaceId}/settings` is declared but no `composable(...)` uses it. Either the screen is gone and the constant outlived it, or the screen was never wired.",
-      "severity": "warn",
-      "site": {
-        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 107,
-        "note": "WORKSPACE_SETTINGS"
-      },
-      "subject": "graph",
-      "title": "`PabrikRoutes.WORKSPACE_SETTINGS` is never a destination"
-    },
-    {
-      "code": "route_constant_unused",
-      "detail": "`kanban/{workspaceId}/{itemId}/settings` is declared but no `composable(...)` uses it. Either the screen is gone and the constant outlived it, or the screen was never wired.",
-      "severity": "warn",
-      "site": {
-        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 108,
-        "note": "KANBAN_SETTINGS"
-      },
-      "subject": "graph",
-      "title": "`PabrikRoutes.KANBAN_SETTINGS` is never a destination"
-    },
-    {
-      "code": "route_constant_unused",
-      "detail": "`documents/{workspaceId}` is declared but no `composable(...)` uses it. Either the screen is gone and the constant outlived it, or the screen was never wired.",
-      "severity": "warn",
-      "site": {
-        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 109,
-        "note": "DOCUMENTS"
-      },
-      "subject": "graph",
-      "title": "`PabrikRoutes.DOCUMENTS` is never a destination"
-    },
-    {
-      "code": "route_constant_unused",
-      "detail": "`documents/{workspaceId}/{documentId}` is declared but no `composable(...)` uses it. Either the screen is gone and the constant outlived it, or the screen was never wired.",
-      "severity": "warn",
-      "site": {
-        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 110,
-        "note": "DOCUMENT"
-      },
-      "subject": "graph",
-      "title": "`PabrikRoutes.DOCUMENT` is never a destination"
-    },
-    {
-      "code": "route_constant_unused",
-      "detail": "`agent/{workspaceId}/{itemId}` is declared but no `composable(...)` uses it. Either the screen is gone and the constant outlived it, or the screen was never wired.",
-      "severity": "warn",
-      "site": {
-        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 112,
-        "note": "AGENT"
-      },
-      "subject": "graph",
-      "title": "`PabrikRoutes.AGENT` is never a destination"
-    },
-    {
-      "code": "route_constant_unused",
-      "detail": "`design/{workspaceId}/{itemId}` is declared but no `composable(...)` uses it. Either the screen is gone and the constant outlived it, or the screen was never wired.",
-      "severity": "warn",
-      "site": {
-        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 113,
-        "note": "DESIGN"
-      },
-      "subject": "graph",
-      "title": "`PabrikRoutes.DESIGN` is never a destination"
-    },
-    {
-      "code": "route_constant_unused",
-      "detail": "`routine/{workspaceId}/{itemId}` is declared but no `composable(...)` uses it. Either the screen is gone and the constant outlived it, or the screen was never wired.",
-      "severity": "warn",
-      "site": {
-        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 114,
-        "note": "ROUTINE"
-      },
-      "subject": "graph",
-      "title": "`PabrikRoutes.ROUTINE` is never a destination"
-    },
-    {
-      "code": "route_constant_unused",
-      "detail": "`git/{workspaceId}/{itemId}` is declared but no `composable(...)` uses it. Either the screen is gone and the constant outlived it, or the screen was never wired.",
-      "severity": "warn",
-      "site": {
-        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 115,
-        "note": "GIT"
-      },
-      "subject": "graph",
-      "title": "`PabrikRoutes.GIT` is never a destination"
-    },
-    {
-      "code": "route_constant_unused",
-      "detail": "`memory/{workspaceId}` is declared but no `composable(...)` uses it. Either the screen is gone and the constant outlived it, or the screen was never wired.",
-      "severity": "warn",
-      "site": {
-        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 116,
-        "note": "MEMORY"
-      },
-      "subject": "graph",
-      "title": "`PabrikRoutes.MEMORY` is never a destination"
-    },
-    {
-      "code": "route_constant_unused",
-      "detail": "`secrets/{workspaceId}` is declared but no `composable(...)` uses it. Either the screen is gone and the constant outlived it, or the screen was never wired.",
-      "severity": "warn",
-      "site": {
-        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 117,
-        "note": "SECRETS"
-      },
-      "subject": "graph",
-      "title": "`PabrikRoutes.SECRETS` is never a destination"
-    },
-    {
-      "code": "route_constant_unused",
-      "detail": "`members/{workspaceId}` is declared but no `composable(...)` uses it. Either the screen is gone and the constant outlived it, or the screen was never wired.",
-      "severity": "warn",
-      "site": {
-        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 118,
-        "note": "MEMBERS"
-      },
-      "subject": "graph",
-      "title": "`PabrikRoutes.MEMBERS` is never a destination"
-    },
-    {
-      "code": "route_constant_unused",
-      "detail": "`skills/{workspaceId}` is declared but no `composable(...)` uses it. Either the screen is gone and the constant outlived it, or the screen was never wired.",
-      "severity": "warn",
-      "site": {
-        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 119,
-        "note": "SKILLS"
-      },
-      "subject": "graph",
-      "title": "`PabrikRoutes.SKILLS` is never a destination"
-    },
-    {
-      "code": "route_constant_unused",
-      "detail": "`mcp/{workspaceId}` is declared but no `composable(...)` uses it. Either the screen is gone and the constant outlived it, or the screen was never wired.",
-      "severity": "warn",
-      "site": {
-        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 120,
-        "note": "MCP"
-      },
-      "subject": "graph",
-      "title": "`PabrikRoutes.MCP` is never a destination"
-    },
-    {
-      "code": "route_constant_unused",
-      "detail": "`llm-config/{workspaceId}` is declared but no `composable(...)` uses it. Either the screen is gone and the constant outlived it, or the screen was never wired.",
-      "severity": "warn",
-      "site": {
-        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 121,
-        "note": "LLM_CONFIG"
-      },
-      "subject": "graph",
-      "title": "`PabrikRoutes.LLM_CONFIG` is never a destination"
-    },
-    {
-      "code": "route_constant_unused",
-      "detail": "`tools/{workspaceId}` is declared but no `composable(...)` uses it. Either the screen is gone and the constant outlived it, or the screen was never wired.",
-      "severity": "warn",
-      "site": {
-        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 122,
-        "note": "TOOLS"
-      },
-      "subject": "graph",
-      "title": "`PabrikRoutes.TOOLS` is never a destination"
-    },
-    {
-      "code": "route_constant_unused",
-      "detail": "`notifications` is declared but no `composable(...)` uses it. Either the screen is gone and the constant outlived it, or the screen was never wired.",
-      "severity": "warn",
-      "site": {
-        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 123,
-        "note": "NOTIFICATIONS"
-      },
-      "subject": "graph",
-      "title": "`PabrikRoutes.NOTIFICATIONS` is never a destination"
-    },
-    {
       "code": "cyclic_navigation",
-      "detail": "5 of the 13 navigations lead back to somewhere they came from, so the back stack can grow past the number of destinations the reader has visited. 1 of those 5 already replace rather than push (`popUpTo` + `launchSingleTop`); the rest are drill-downs and deliberate switches, so this is a number to watch rather than a defect.",
+      "detail": "5 of the 16 navigations lead back to somewhere they came from, so the back stack can grow past the number of destinations the reader has visited. 1 of those 5 already replace rather than push (`popUpTo` + `launchSingleTop`); the rest are drill-downs and deliberate switches, so this is a number to watch rather than a defect.",
       "severity": "info",
       "site": null,
       "subject": "graph",
@@ -827,61 +1799,384 @@
       "severity": "info",
       "site": {
         "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
-        "line": 710,
+        "line": 849,
+        "note": "AGENT"
+      },
+      "subject": "agent/{workspaceId}/{itemId}",
+      "title": "`agent/{workspaceId}/{itemId}` navigates nowhere"
+    },
+    {
+      "code": "terminal_destination",
+      "detail": "Every screen it renders is a leaf of the navigation graph: there is no `navigate` call inside it. Expected for a detail screen, wrong for anything meant to be a hub.",
+      "severity": "info",
+      "site": {
+        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+        "line": 874,
+        "note": "DESIGN"
+      },
+      "subject": "design/{workspaceId}/{itemId}",
+      "title": "`design/{workspaceId}/{itemId}` navigates nowhere"
+    },
+    {
+      "code": "terminal_destination",
+      "detail": "Every screen it renders is a leaf of the navigation graph: there is no `navigate` call inside it. Expected for a detail screen, wrong for anything meant to be a hub.",
+      "severity": "info",
+      "site": {
+        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+        "line": 781,
+        "note": "DOCUMENTS"
+      },
+      "subject": "documents/{workspaceId}",
+      "title": "`documents/{workspaceId}` navigates nowhere"
+    },
+    {
+      "code": "terminal_destination",
+      "detail": "Every screen it renders is a leaf of the navigation graph: there is no `navigate` call inside it. Expected for a detail screen, wrong for anything meant to be a hub.",
+      "severity": "info",
+      "site": {
+        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+        "line": 794,
+        "note": "DOCUMENT"
+      },
+      "subject": "documents/{workspaceId}/{documentId}",
+      "title": "`documents/{workspaceId}/{documentId}` navigates nowhere"
+    },
+    {
+      "code": "terminal_destination",
+      "detail": "Every screen it renders is a leaf of the navigation graph: there is no `navigate` call inside it. Expected for a detail screen, wrong for anything meant to be a hub.",
+      "severity": "info",
+      "site": {
+        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+        "line": 924,
+        "note": "GIT"
+      },
+      "subject": "git/{workspaceId}/{itemId}",
+      "title": "`git/{workspaceId}/{itemId}` navigates nowhere"
+    },
+    {
+      "code": "terminal_destination",
+      "detail": "Every screen it renders is a leaf of the navigation graph: there is no `navigate` call inside it. Expected for a detail screen, wrong for anything meant to be a hub.",
+      "severity": "info",
+      "site": {
+        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+        "line": 824,
+        "note": "KANBAN_SETTINGS"
+      },
+      "subject": "kanban/{workspaceId}/{itemId}/settings",
+      "title": "`kanban/{workspaceId}/{itemId}/settings` navigates nowhere"
+    },
+    {
+      "code": "terminal_destination",
+      "detail": "Every screen it renders is a leaf of the navigation graph: there is no `navigate` call inside it. Expected for a detail screen, wrong for anything meant to be a hub.",
+      "severity": "info",
+      "site": {
+        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+        "line": 1040,
+        "note": "LLM_CONFIG"
+      },
+      "subject": "llm-config/{workspaceId}",
+      "title": "`llm-config/{workspaceId}` navigates nowhere"
+    },
+    {
+      "code": "terminal_destination",
+      "detail": "Every screen it renders is a leaf of the navigation graph: there is no `navigate` call inside it. Expected for a detail screen, wrong for anything meant to be a hub.",
+      "severity": "info",
+      "site": {
+        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+        "line": 1022,
+        "note": "MCP"
+      },
+      "subject": "mcp/{workspaceId}",
+      "title": "`mcp/{workspaceId}` navigates nowhere"
+    },
+    {
+      "code": "terminal_destination",
+      "detail": "Every screen it renders is a leaf of the navigation graph: there is no `navigate` call inside it. Expected for a detail screen, wrong for anything meant to be a hub.",
+      "severity": "info",
+      "site": {
+        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+        "line": 986,
+        "note": "MEMBERS"
+      },
+      "subject": "members/{workspaceId}",
+      "title": "`members/{workspaceId}` navigates nowhere"
+    },
+    {
+      "code": "terminal_destination",
+      "detail": "Every screen it renders is a leaf of the navigation graph: there is no `navigate` call inside it. Expected for a detail screen, wrong for anything meant to be a hub.",
+      "severity": "info",
+      "site": {
+        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+        "line": 950,
+        "note": "MEMORY"
+      },
+      "subject": "memory/{workspaceId}",
+      "title": "`memory/{workspaceId}` navigates nowhere"
+    },
+    {
+      "code": "terminal_destination",
+      "detail": "Every screen it renders is a leaf of the navigation graph: there is no `navigate` call inside it. Expected for a detail screen, wrong for anything meant to be a hub.",
+      "severity": "info",
+      "site": {
+        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+        "line": 736,
         "note": "RECORD_DETAIL"
       },
       "subject": "network/record/{recordId}",
       "title": "`network/record/{recordId}` navigates nowhere"
+    },
+    {
+      "code": "terminal_destination",
+      "detail": "Every screen it renders is a leaf of the navigation graph: there is no `navigate` call inside it. Expected for a detail screen, wrong for anything meant to be a hub.",
+      "severity": "info",
+      "site": {
+        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+        "line": 817,
+        "note": "NOTIFICATIONS"
+      },
+      "subject": "notifications",
+      "title": "`notifications` navigates nowhere"
+    },
+    {
+      "code": "terminal_destination",
+      "detail": "Every screen it renders is a leaf of the navigation graph: there is no `navigate` call inside it. Expected for a detail screen, wrong for anything meant to be a hub.",
+      "severity": "info",
+      "site": {
+        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+        "line": 899,
+        "note": "ROUTINE"
+      },
+      "subject": "routine/{workspaceId}/{itemId}",
+      "title": "`routine/{workspaceId}/{itemId}` navigates nowhere"
+    },
+    {
+      "code": "terminal_destination",
+      "detail": "Every screen it renders is a leaf of the navigation graph: there is no `navigate` call inside it. Expected for a detail screen, wrong for anything meant to be a hub.",
+      "severity": "info",
+      "site": {
+        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+        "line": 968,
+        "note": "SECRETS"
+      },
+      "subject": "secrets/{workspaceId}",
+      "title": "`secrets/{workspaceId}` navigates nowhere"
+    },
+    {
+      "code": "terminal_destination",
+      "detail": "Every screen it renders is a leaf of the navigation graph: there is no `navigate` call inside it. Expected for a detail screen, wrong for anything meant to be a hub.",
+      "severity": "info",
+      "site": {
+        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+        "line": 757,
+        "note": "SETTINGS"
+      },
+      "subject": "settings",
+      "title": "`settings` navigates nowhere"
+    },
+    {
+      "code": "terminal_destination",
+      "detail": "Every screen it renders is a leaf of the navigation graph: there is no `navigate` call inside it. Expected for a detail screen, wrong for anything meant to be a hub.",
+      "severity": "info",
+      "site": {
+        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+        "line": 1004,
+        "note": "SKILLS"
+      },
+      "subject": "skills/{workspaceId}",
+      "title": "`skills/{workspaceId}` navigates nowhere"
+    },
+    {
+      "code": "terminal_destination",
+      "detail": "Every screen it renders is a leaf of the navigation graph: there is no `navigate` call inside it. Expected for a detail screen, wrong for anything meant to be a hub.",
+      "severity": "info",
+      "site": {
+        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+        "line": 1058,
+        "note": "TOOLS"
+      },
+      "subject": "tools/{workspaceId}",
+      "title": "`tools/{workspaceId}` navigates nowhere"
+    },
+    {
+      "code": "terminal_destination",
+      "detail": "Every screen it renders is a leaf of the navigation graph: there is no `navigate` call inside it. Expected for a detail screen, wrong for anything meant to be a hub.",
+      "severity": "info",
+      "site": {
+        "file": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
+        "line": 768,
+        "note": "WORKSPACE_SETTINGS"
+      },
+      "subject": "workspace/{workspaceId}/settings",
+      "title": "`workspace/{workspaceId}/settings` navigates nowhere"
     }
   ],
-  "infoCount": 2,
+  "infoCount": 19,
   "layout": {
+    "agent/{workspaceId}/{itemId}": {
+      "h": 64,
+      "w": 214,
+      "x": 1376.0,
+      "y": 32
+    },
     "app": {
       "h": 64,
       "w": 214,
-      "x": 541.0,
+      "x": 40.0,
       "y": 32
     },
     "chat/{sessionId}": {
       "h": 64,
       "w": 214,
-      "x": 40.0,
+      "x": 1376.0,
       "y": 200
     },
     "chats/{workspaceId}": {
       "h": 64,
       "w": 214,
-      "x": 374.0,
+      "x": 1710.0,
       "y": 200
+    },
+    "design/{workspaceId}/{itemId}": {
+      "h": 64,
+      "w": 214,
+      "x": 1710.0,
+      "y": 32
+    },
+    "documents/{workspaceId}": {
+      "h": 64,
+      "w": 214,
+      "x": 3046.0,
+      "y": 200
+    },
+    "documents/{workspaceId}/{documentId}": {
+      "h": 64,
+      "w": 214,
+      "x": 708.0,
+      "y": 32
+    },
+    "git/{workspaceId}/{itemId}": {
+      "h": 64,
+      "w": 214,
+      "x": 2378.0,
+      "y": 32
+    },
+    "kanban/{workspaceId}/{itemId}/settings": {
+      "h": 64,
+      "w": 214,
+      "x": 1042.0,
+      "y": 32
+    },
+    "llm-config/{workspaceId}": {
+      "h": 64,
+      "w": 214,
+      "x": 4382.0,
+      "y": 32
+    },
+    "mcp/{workspaceId}": {
+      "h": 64,
+      "w": 214,
+      "x": 4048.0,
+      "y": 32
+    },
+    "members/{workspaceId}": {
+      "h": 64,
+      "w": 214,
+      "x": 3380.0,
+      "y": 32
+    },
+    "memory/{workspaceId}": {
+      "h": 64,
+      "w": 214,
+      "x": 2712.0,
+      "y": 32
     },
     "network": {
       "h": 64,
       "w": 214,
-      "x": 1042.0,
+      "x": 2378.0,
       "y": 200
     },
     "network/record/{recordId}": {
       "h": 64,
       "w": 214,
-      "x": 541.0,
+      "x": 2378.0,
       "y": 368
+    },
+    "notifications": {
+      "h": 64,
+      "w": 214,
+      "x": 3380.0,
+      "y": 200
     },
     "project/{workspaceId}/{itemId}": {
       "h": 64,
       "w": 214,
-      "x": 708.0,
+      "x": 2044.0,
       "y": 200
+    },
+    "routine/{workspaceId}/{itemId}": {
+      "h": 64,
+      "w": 214,
+      "x": 2044.0,
+      "y": 32
+    },
+    "secrets/{workspaceId}": {
+      "h": 64,
+      "w": 214,
+      "x": 3046.0,
+      "y": 32
+    },
+    "settings": {
+      "h": 64,
+      "w": 214,
+      "x": 2712.0,
+      "y": 200
+    },
+    "skills/{workspaceId}": {
+      "h": 64,
+      "w": 214,
+      "x": 3714.0,
+      "y": 32
+    },
+    "tools/{workspaceId}": {
+      "h": 64,
+      "w": 214,
+      "x": 4716.0,
+      "y": 32
+    },
+    "workspace/{workspaceId}/settings": {
+      "h": 64,
+      "w": 214,
+      "x": 374.0,
+      "y": 32
     }
   },
   "meta": {
     "generatedBy": "tools/navgraph/build.py",
-    "gitSha": "dee481851",
+    "gitSha": "cf213855c",
     "manifestFile": "src/apps/android_mobile/app/src/main/AndroidManifest.xml",
     "manifestHosts": {
+      "agent": 66,
       "chat": 53,
       "chats": 58,
+      "design": 67,
+      "doc": 64,
+      "documents": 60,
+      "git": 69,
+      "kanban-settings": 65,
+      "llm-config": 75,
+      "mcp": 74,
+      "members": 72,
+      "memory": 70,
       "network": 43,
-      "project": 59
+      "notifications": 61,
+      "project": 59,
+      "routine": 68,
+      "secrets": 71,
+      "settings": 62,
+      "skills": 73,
+      "tools": 76,
+      "workspace": 63
     },
     "navFile": "src/apps/android_mobile/app/src/main/java/com/pabrik/mobile/network/PabrikNavGraph.kt",
     "startDestination": "app"
@@ -890,7 +2185,7 @@
   "routeConstants": [
     {
       "kind": "route",
-      "line": 81,
+      "line": 91,
       "name": "SHELL",
       "synthetic": false,
       "template": "app",
@@ -898,7 +2193,7 @@
     },
     {
       "kind": "route",
-      "line": 82,
+      "line": 92,
       "name": "CHAT",
       "synthetic": false,
       "template": "chat/{sessionId}",
@@ -906,7 +2201,7 @@
     },
     {
       "kind": "argument",
-      "line": 83,
+      "line": 93,
       "name": "ARG_SESSION_ID",
       "synthetic": false,
       "template": "sessionId",
@@ -914,7 +2209,7 @@
     },
     {
       "kind": "route",
-      "line": 84,
+      "line": 94,
       "name": "NETWORK",
       "synthetic": false,
       "template": "network",
@@ -922,7 +2217,7 @@
     },
     {
       "kind": "route",
-      "line": 85,
+      "line": 95,
       "name": "RECORD_DETAIL",
       "synthetic": false,
       "template": "network/record/{recordId}",
@@ -930,7 +2225,7 @@
     },
     {
       "kind": "argument",
-      "line": 86,
+      "line": 96,
       "name": "ARG_RECORD_ID",
       "synthetic": false,
       "template": "recordId",
@@ -938,7 +2233,7 @@
     },
     {
       "kind": "route",
-      "line": 89,
+      "line": 99,
       "name": "PROJECT",
       "synthetic": false,
       "template": "project/{workspaceId}/{itemId}",
@@ -946,7 +2241,7 @@
     },
     {
       "kind": "argument",
-      "line": 90,
+      "line": 100,
       "name": "ARG_WORKSPACE_ID",
       "synthetic": false,
       "template": "workspaceId",
@@ -954,7 +2249,7 @@
     },
     {
       "kind": "argument",
-      "line": 91,
+      "line": 101,
       "name": "ARG_ITEM_ID",
       "synthetic": false,
       "template": "itemId",
@@ -962,7 +2257,7 @@
     },
     {
       "kind": "route",
-      "line": 94,
+      "line": 104,
       "name": "CHATS",
       "synthetic": false,
       "template": "chats/{workspaceId}",
@@ -970,7 +2265,7 @@
     },
     {
       "kind": "route",
-      "line": 106,
+      "line": 116,
       "name": "SETTINGS",
       "synthetic": false,
       "template": "settings",
@@ -978,7 +2273,7 @@
     },
     {
       "kind": "route",
-      "line": 107,
+      "line": 117,
       "name": "WORKSPACE_SETTINGS",
       "synthetic": false,
       "template": "workspace/{workspaceId}/settings",
@@ -986,7 +2281,7 @@
     },
     {
       "kind": "route",
-      "line": 108,
+      "line": 118,
       "name": "KANBAN_SETTINGS",
       "synthetic": false,
       "template": "kanban/{workspaceId}/{itemId}/settings",
@@ -994,7 +2289,7 @@
     },
     {
       "kind": "route",
-      "line": 109,
+      "line": 119,
       "name": "DOCUMENTS",
       "synthetic": false,
       "template": "documents/{workspaceId}",
@@ -1002,7 +2297,7 @@
     },
     {
       "kind": "route",
-      "line": 110,
+      "line": 120,
       "name": "DOCUMENT",
       "synthetic": false,
       "template": "documents/{workspaceId}/{documentId}",
@@ -1010,7 +2305,7 @@
     },
     {
       "kind": "argument",
-      "line": 111,
+      "line": 121,
       "name": "ARG_DOCUMENT_ID",
       "synthetic": false,
       "template": "documentId",
@@ -1018,7 +2313,7 @@
     },
     {
       "kind": "route",
-      "line": 112,
+      "line": 122,
       "name": "AGENT",
       "synthetic": false,
       "template": "agent/{workspaceId}/{itemId}",
@@ -1026,7 +2321,7 @@
     },
     {
       "kind": "route",
-      "line": 113,
+      "line": 123,
       "name": "DESIGN",
       "synthetic": false,
       "template": "design/{workspaceId}/{itemId}",
@@ -1034,7 +2329,7 @@
     },
     {
       "kind": "route",
-      "line": 114,
+      "line": 124,
       "name": "ROUTINE",
       "synthetic": false,
       "template": "routine/{workspaceId}/{itemId}",
@@ -1042,7 +2337,7 @@
     },
     {
       "kind": "route",
-      "line": 115,
+      "line": 125,
       "name": "GIT",
       "synthetic": false,
       "template": "git/{workspaceId}/{itemId}",
@@ -1050,7 +2345,7 @@
     },
     {
       "kind": "route",
-      "line": 116,
+      "line": 126,
       "name": "MEMORY",
       "synthetic": false,
       "template": "memory/{workspaceId}",
@@ -1058,7 +2353,7 @@
     },
     {
       "kind": "route",
-      "line": 117,
+      "line": 127,
       "name": "SECRETS",
       "synthetic": false,
       "template": "secrets/{workspaceId}",
@@ -1066,7 +2361,7 @@
     },
     {
       "kind": "route",
-      "line": 118,
+      "line": 128,
       "name": "MEMBERS",
       "synthetic": false,
       "template": "members/{workspaceId}",
@@ -1074,7 +2369,7 @@
     },
     {
       "kind": "route",
-      "line": 119,
+      "line": 129,
       "name": "SKILLS",
       "synthetic": false,
       "template": "skills/{workspaceId}",
@@ -1082,7 +2377,7 @@
     },
     {
       "kind": "route",
-      "line": 120,
+      "line": 130,
       "name": "MCP",
       "synthetic": false,
       "template": "mcp/{workspaceId}",
@@ -1090,7 +2385,7 @@
     },
     {
       "kind": "route",
-      "line": 121,
+      "line": 131,
       "name": "LLM_CONFIG",
       "synthetic": false,
       "template": "llm-config/{workspaceId}",
@@ -1098,7 +2393,7 @@
     },
     {
       "kind": "route",
-      "line": 122,
+      "line": 132,
       "name": "TOOLS",
       "synthetic": false,
       "template": "tools/{workspaceId}",
@@ -1106,7 +2401,7 @@
     },
     {
       "kind": "route",
-      "line": 123,
+      "line": 133,
       "name": "NOTIFICATIONS",
       "synthetic": false,
       "template": "notifications",
@@ -1114,7 +2409,7 @@
     },
     {
       "kind": "route",
-      "line": 96,
+      "line": 106,
       "name": "chat",
       "synthetic": true,
       "template": "chat/{sessionId}",
@@ -1122,7 +2417,7 @@
     },
     {
       "kind": "route",
-      "line": 98,
+      "line": 108,
       "name": "recordDetail",
       "synthetic": true,
       "template": "network/record/{recordId}",
@@ -1130,7 +2425,7 @@
     },
     {
       "kind": "route",
-      "line": 100,
+      "line": 110,
       "name": "project",
       "synthetic": true,
       "template": "project/{workspaceId}/{itemId}",
@@ -1138,7 +2433,7 @@
     },
     {
       "kind": "route",
-      "line": 103,
+      "line": 113,
       "name": "chats",
       "synthetic": true,
       "template": "chats/{workspaceId}",
@@ -1146,7 +2441,7 @@
     },
     {
       "kind": "route",
-      "line": 125,
+      "line": 135,
       "name": "settings",
       "synthetic": true,
       "template": "workspace/{workspaceId}/settings",
@@ -1154,7 +2449,7 @@
     },
     {
       "kind": "route",
-      "line": 127,
+      "line": 137,
       "name": "workspaceSettings",
       "synthetic": true,
       "template": "workspace/{workspaceId}/settings",
@@ -1162,7 +2457,7 @@
     },
     {
       "kind": "route",
-      "line": 130,
+      "line": 140,
       "name": "kanbanSettings",
       "synthetic": true,
       "template": "kanban/{workspaceId}/{itemId}/settings",
@@ -1170,7 +2465,7 @@
     },
     {
       "kind": "route",
-      "line": 133,
+      "line": 143,
       "name": "documents",
       "synthetic": true,
       "template": "documents/{workspaceId}",
@@ -1178,7 +2473,7 @@
     },
     {
       "kind": "route",
-      "line": 136,
+      "line": 146,
       "name": "document",
       "synthetic": true,
       "template": "documents/{workspaceId}/{documentId}",
@@ -1186,7 +2481,7 @@
     },
     {
       "kind": "route",
-      "line": 139,
+      "line": 149,
       "name": "agent",
       "synthetic": true,
       "template": "agent/{workspaceId}/{itemId}",
@@ -1194,7 +2489,7 @@
     },
     {
       "kind": "route",
-      "line": 142,
+      "line": 152,
       "name": "design",
       "synthetic": true,
       "template": "design/{workspaceId}/{itemId}",
@@ -1202,7 +2497,7 @@
     },
     {
       "kind": "route",
-      "line": 145,
+      "line": 155,
       "name": "routine",
       "synthetic": true,
       "template": "routine/{workspaceId}/{itemId}",
@@ -1210,7 +2505,7 @@
     },
     {
       "kind": "route",
-      "line": 148,
+      "line": 158,
       "name": "git",
       "synthetic": true,
       "template": "git/{workspaceId}/{itemId}",
@@ -1218,7 +2513,7 @@
     },
     {
       "kind": "route",
-      "line": 151,
+      "line": 161,
       "name": "memory",
       "synthetic": true,
       "template": "memory/{workspaceId}",
@@ -1226,7 +2521,7 @@
     },
     {
       "kind": "route",
-      "line": 154,
+      "line": 164,
       "name": "secrets",
       "synthetic": true,
       "template": "secrets/{workspaceId}",
@@ -1234,7 +2529,7 @@
     },
     {
       "kind": "route",
-      "line": 157,
+      "line": 167,
       "name": "members",
       "synthetic": true,
       "template": "members/{workspaceId}",
@@ -1242,7 +2537,7 @@
     },
     {
       "kind": "route",
-      "line": 160,
+      "line": 170,
       "name": "skills",
       "synthetic": true,
       "template": "skills/{workspaceId}",
@@ -1250,7 +2545,7 @@
     },
     {
       "kind": "route",
-      "line": 163,
+      "line": 173,
       "name": "mcp",
       "synthetic": true,
       "template": "mcp/{workspaceId}",
@@ -1258,7 +2553,7 @@
     },
     {
       "kind": "route",
-      "line": 166,
+      "line": 176,
       "name": "llmConfig",
       "synthetic": true,
       "template": "llm-config/{workspaceId}",
@@ -1266,12 +2561,12 @@
     },
     {
       "kind": "route",
-      "line": 169,
+      "line": 179,
       "name": "tools",
       "synthetic": true,
       "template": "tools/{workspaceId}",
       "value": "tools/${UriEncoding.encode(workspaceId)}"
     }
   ],
-  "warnCount": 17
+  "warnCount": 0
 }
