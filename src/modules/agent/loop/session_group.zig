@@ -12,9 +12,6 @@ pub const Role = router.Role;
 pub const Decision = router.Decision;
 pub const CloseReason = router.CloseReason;
 
-/// How many agent turns one message from the human may trigger before the room stops and waits for them.
-pub const default_hop_budget: u32 = 8;
-
 /// The last thing said in the thread.
 pub const LastTurn = struct {
     speaker: []const u8,
@@ -279,7 +276,6 @@ pub fn nextSpeaker(
     allocator: std.mem.Allocator,
     db: *database.Db,
     session_id: []const u8,
-    hop_budget: u32,
 ) !?NextSpeaker {
     const pending = try takePendingDelegate(allocator, db, session_id);
     defer if (pending) |p| allocator.free(p);
@@ -294,10 +290,6 @@ pub fn nextSpeaker(
     errdefer freeMembers(allocator, members);
 
     const hops = try hopsSinceHuman(allocator, db, session_id);
-
-    if (hops >= hop_budget) {
-        return .{ .decision = .{ .close = .hop_budget }, .members = members, .lead = lead, .hops = hops };
-    }
 
     if (pending) |target| {
         // The roster supplies the spelling when it has one.
@@ -335,8 +327,6 @@ pub fn nextSpeaker(
     const decision = try router.decide(allocator, members, lead, .{
         .last_speaker = speaker,
         .last_text = text,
-        .hops_so_far = hops,
-        .hop_budget = hop_budget,
     });
 
     return .{ .decision = decision, .members = members, .lead = lead, .hops = hops };
@@ -411,7 +401,7 @@ test "a session that is not a group has no next speaker" {
 
     try ctx.db.exec(testing.allocator, "INSERT INTO sessions (id, name) VALUES ('s_1', 'plain')", &.{});
 
-    try testing.expect((try nextSpeaker(testing.allocator, &ctx.db, "s_1", 8)) == null);
+    try testing.expect((try nextSpeaker(testing.allocator, &ctx.db, "s_1")) == null);
 }
 
 test "a pending delegation speaks even when the chat has no lead" {
@@ -422,7 +412,7 @@ test "a pending delegation speaks even when the chat has no lead" {
     try ctx.db.exec(testing.allocator, "INSERT INTO sessions (id, name) VALUES ('s_1', 'plain')", &.{});
     try setPendingDelegate(testing.allocator, &ctx.db, "s_1", "deepseek auto");
 
-    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", 8)).?;
+    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1")).?;
     defer next.deinit(testing.allocator);
 
     try testing.expectEqualStrings("deepseek auto", next.decision.speak);
@@ -436,7 +426,7 @@ test "a pending delegation to a name outside the roster is honoured" {
     try seedRoster(&ctx);
     try setPendingDelegate(testing.allocator, &ctx.db, "s_1", "deepseek auto");
 
-    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", 8)).?;
+    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1")).?;
     defer next.deinit(testing.allocator);
 
     try testing.expectEqualStrings("deepseek auto", next.decision.speak);
@@ -450,7 +440,7 @@ test "a group session with a human message speaks through its lead" {
     try seedRoster(&ctx);
     try insertRow(&ctx, "h1", "user", "Engineer", "Add rate limiting.", 1);
 
-    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", 8)).?;
+    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1")).?;
     defer next.deinit(testing.allocator);
 
     try testing.expectEqualStrings("Engineer", next.decision.speak);
@@ -465,7 +455,7 @@ test "a mention in the last agent row hands the turn to that agent" {
     try insertRow(&ctx, "h1", "user", "Engineer", "Add rate limiting.", 1);
     try insertRow(&ctx, "h2", "assistant", "Engineer", "Audit it first, @Android Engineer.", 2);
 
-    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", 8)).?;
+    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1")).?;
     defer next.deinit(testing.allocator);
 
     try testing.expectEqualStrings("Android Engineer", next.decision.speak);
@@ -545,22 +535,6 @@ test "the hop count starts over when the human speaks again" {
     try testing.expectEqual(@as(u32, 0), try hopsSinceHuman(testing.allocator, &ctx.db, "s_1"));
 }
 
-test "a thread that has spent its hops closes instead of routing another turn" {
-    var ctx = try setupDb();
-    defer ctx.db.deinit();
-    defer ctx.threaded.deinit();
-    try seedRoster(&ctx);
-
-    try insertRow(&ctx, "h1", "user", "Engineer", "go", 1);
-    try insertRow(&ctx, "h2", "assistant", "Engineer", "@Security Engineerr take it", 2);
-    try insertRow(&ctx, "h3", "assistant", "Security Engineerr", "done @Engineer", 3);
-
-    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", 2)).?;
-    defer next.deinit(testing.allocator);
-
-    try testing.expectEqual(CloseReason.hop_budget, next.decision.close);
-}
-
 test "one agent's tool iterations are one hop, not one per iteration" {
     var ctx = try setupDb();
     defer ctx.db.deinit();
@@ -579,7 +553,7 @@ test "one agent's tool iterations are one hop, not one per iteration" {
 
     try testing.expectEqual(@as(u32, 1), try hopsSinceHuman(testing.allocator, &ctx.db, "s_1"));
 
-    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", default_hop_budget)).?;
+    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1")).?;
     defer next.deinit(testing.allocator);
 
     switch (next.decision) {
@@ -591,7 +565,7 @@ test "one agent's tool iterations are one hop, not one per iteration" {
     }
 }
 
-test "eight turns handed between two agents still close the room" {
+test "eight turns handed between two agents keep the room routing" {
     var ctx = try setupDb();
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
@@ -607,14 +581,16 @@ test "eight turns handed between two agents still close the room" {
         try insertRow(&ctx, try std.fmt.bufPrint(&id_buf, "h{d}", .{turn + 1}), "assistant", who, said, at);
     }
 
-    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", default_hop_budget)).?;
+    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1")).?;
     defer next.deinit(testing.allocator);
 
+    try testing.expectEqual(@as(u32, 8), next.hops);
+
     switch (next.decision) {
-        .close => |reason| try testing.expectEqual(CloseReason.hop_budget, reason),
-        .speak => |name| {
-            std.debug.print("the room kept going: {s} was asked to speak after {d} turns\n", .{ name, next.hops });
-            return error.BudgetNotEnforced;
+        .speak => |name| try testing.expectEqualStrings("Engineer", name),
+        .close => |reason| {
+            std.debug.print("the room stopped itself: the turn closed with {s} after {d} turns\n", .{ @tagName(reason), next.hops });
+            return error.RoomCutOff;
         },
     }
 }
@@ -681,7 +657,7 @@ test "a pending delegation speaks the named member instead of the router" {
     try insertRow(&ctx, "h1", "user", "Engineer", "Add rate limiting.", 1);
     try setPendingDelegate(testing.allocator, &ctx.db, "s_1", "Android Engineer");
 
-    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", 8)).?;
+    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1")).?;
     defer next.deinit(testing.allocator);
 
     try testing.expectEqualStrings("Android Engineer", next.decision.speak);
@@ -696,7 +672,7 @@ test "a pending delegation outranks a mention in the last row" {
     try insertRow(&ctx, "h2", "assistant", "Engineer", "Audit it first, @Security Engineerr.", 2);
     try setPendingDelegate(testing.allocator, &ctx.db, "s_1", "Android Engineer");
 
-    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", 8)).?;
+    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1")).?;
     defer next.deinit(testing.allocator);
 
     try testing.expectEqualStrings("Android Engineer", next.decision.speak);
@@ -710,11 +686,11 @@ test "a pending delegation is consumed by the turn it routes" {
     try insertRow(&ctx, "h1", "user", "Engineer", "Add rate limiting.", 1);
     try setPendingDelegate(testing.allocator, &ctx.db, "s_1", "Android Engineer");
 
-    var first = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", 8)).?;
+    var first = (try nextSpeaker(testing.allocator, &ctx.db, "s_1")).?;
     defer first.deinit(testing.allocator);
     try testing.expectEqualStrings("Android Engineer", first.decision.speak);
 
-    var second = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", 8)).?;
+    var second = (try nextSpeaker(testing.allocator, &ctx.db, "s_1")).?;
     defer second.deinit(testing.allocator);
     try testing.expectEqualStrings("Engineer", second.decision.speak);
 }
@@ -727,7 +703,7 @@ test "a pending delegation naming a non-member is honoured" {
     try insertRow(&ctx, "h1", "user", "Engineer", "Add rate limiting.", 1);
     try setPendingDelegate(testing.allocator, &ctx.db, "s_1", "Ghost");
 
-    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", 8)).?;
+    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1")).?;
     defer next.deinit(testing.allocator);
     try testing.expectEqualStrings("Ghost", next.decision.speak);
 
@@ -752,12 +728,12 @@ test "clearing a pending delegation leaves the router in charge" {
     try setPendingDelegate(testing.allocator, &ctx.db, "s_1", "Android Engineer");
     try setPendingDelegate(testing.allocator, &ctx.db, "s_1", "");
 
-    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", 8)).?;
+    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1")).?;
     defer next.deinit(testing.allocator);
     try testing.expectEqualStrings("Engineer", next.decision.speak);
 }
 
-test "a pending delegation does not outrun the hop budget" {
+test "a pending delegation speaks even after many turns" {
     var ctx = try setupDb();
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
@@ -767,9 +743,16 @@ test "a pending delegation does not outrun the hop budget" {
     try insertRow(&ctx, "h3", "assistant", "Security Engineerr", "Audited.", 3);
     try setPendingDelegate(testing.allocator, &ctx.db, "s_1", "Android Engineer");
 
-    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1", 2)).?;
+    var next = (try nextSpeaker(testing.allocator, &ctx.db, "s_1")).?;
     defer next.deinit(testing.allocator);
-    try testing.expectEqual(CloseReason.hop_budget, next.decision.close);
+
+    switch (next.decision) {
+        .speak => |name| try testing.expectEqualStrings("Android Engineer", name),
+        .close => |reason| {
+            std.debug.print("a delegation was dropped: the turn closed with {s} after {d} turns\n", .{ @tagName(reason), next.hops });
+            return error.DelegationDropped;
+        },
+    }
 
     try testing.expect((try takePendingDelegate(testing.allocator, &ctx.db, "s_1")) == null);
 }

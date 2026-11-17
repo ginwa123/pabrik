@@ -69,12 +69,10 @@ fn roster(
 }
 
 fn next(allocator: std.mem.Allocator, db: *database.Db, a: args.GroupArgs) ![]u8 {
-    const budget = if (a.budget == 0) session_group.default_hop_budget else a.budget;
-
     var buf: std.ArrayList(u8) = .empty;
     errdefer buf.deinit(allocator);
 
-    const decided = try session_group.nextSpeaker(allocator, db, a.session_id, budget);
+    const decided = try session_group.nextSpeaker(allocator, db, a.session_id);
 
     try buf.appendSlice(allocator, "{\"session_id\":");
     try appendJsonString(allocator, &buf, a.session_id);
@@ -85,8 +83,6 @@ fn next(allocator: std.mem.Allocator, db: *database.Db, a: args.GroupArgs) ![]u8
         var resolved = speaker;
         defer resolved.deinit(allocator);
 
-        const budget_text = try std.fmt.allocPrint(allocator, "{d}", .{budget});
-        defer allocator.free(budget_text);
         const hops_text = try std.fmt.allocPrint(allocator, "{d}", .{resolved.hops});
         defer allocator.free(hops_text);
 
@@ -94,8 +90,6 @@ fn next(allocator: std.mem.Allocator, db: *database.Db, a: args.GroupArgs) ![]u8
         try appendJsonString(allocator, &buf, resolved.lead);
         try buf.appendSlice(allocator, ",\"hops\":");
         try buf.appendSlice(allocator, hops_text);
-        try buf.appendSlice(allocator, ",\"budget\":");
-        try buf.appendSlice(allocator, budget_text);
 
         switch (resolved.decision) {
             .speak => |name| {
@@ -265,10 +259,9 @@ test "group next names the agent the router picked and the hops it counted" {
     try testing.expect(std.mem.indexOf(u8, json, "\"action\":\"speak\"") != null);
     try testing.expect(std.mem.indexOf(u8, json, "\"agent\":\"Security Engineerr\"") != null);
     try testing.expect(std.mem.indexOf(u8, json, "\"hops\":1") != null);
-    try testing.expect(std.mem.indexOf(u8, json, "\"budget\":8") != null);
 }
 
-test "group next closes the turn when the budget is spent" {
+test "group next keeps handing the turn on past the old hop budget" {
     var ctx = try setupDb();
     defer ctx.db.deinit();
     defer ctx.threaded.deinit();
@@ -285,11 +278,12 @@ test "group next closes the turn when the budget is spent" {
         \\       ('h3', 's_1', 'assistant', 'Security Engineerr', 'back to @engineer', 3)
     , &.{});
 
-    const json = try runWithDb(testing.allocator, &ctx.db, .{ .op = .next, .session_id = "s_1", .budget = 2 });
+    const json = try runWithDb(testing.allocator, &ctx.db, .{ .op = .next, .session_id = "s_1" });
     defer testing.allocator.free(json);
 
-    try testing.expect(std.mem.indexOf(u8, json, "\"action\":\"close\"") != null);
-    try testing.expect(std.mem.indexOf(u8, json, "\"reason\":\"hop_budget\"") != null);
+    try testing.expect(std.mem.indexOf(u8, json, "\"action\":\"speak\"") != null);
+    try testing.expect(std.mem.indexOf(u8, json, "\"agent\":\"Engineer\"") != null);
+    try testing.expect(std.mem.indexOf(u8, json, "close") == null);
 }
 
 test "group next keeps one agent working past the hop budget" {

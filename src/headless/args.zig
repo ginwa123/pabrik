@@ -67,8 +67,6 @@ pub const GroupArgs = struct {
     role: []const u8 = "worker",
     /// Where in the roster this member sits. Null appends.
     position: ?u32 = null,
-    /// Turns one human message may trigger. 0 = the built-in budget.
-    budget: u32 = 0,
     /// What a `delegate` asks the named agent.
     message: []const u8 = "",
 };
@@ -335,7 +333,7 @@ pub const HELP_TEXT = "pabrik headless — run the pabrik backend with no HTTP s
     "      set-icon flags: --workspace <id> --document <id> | --folder <id> --icon <name> (empty clears)\n" ++
     "  pabrik headless group <op> [flags]       Read or change a multi-agent session\n" ++
     "      ops: create | join | leave | lead | members | next | delegate\n" ++
-    "      flags: --session <id> --agent <n> --role lead|worker --position <n> --budget <n> --message <text>\n" ++
+    "      flags: --session <id> --agent <n> --role lead|worker --position <n> --message <text>\n" ++
     "  pabrik headless message <op> [flags]      Delete, restore or drop ONE llm_history row\n" ++
     "      ops: delete <id> | restore --row-file <path> | feed <id> --feed 0|1\n" ++
     "  pabrik headless usage [flags]             Token, cache and tool totals for a workspace\n" ++
@@ -1092,11 +1090,6 @@ fn parseGroup(argv: []const []const u8) ParseError!Outcome {
             if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
             got.position = std.fmt.parseInt(u32, argv[i], 10) catch
                 return fail(.{ .kind = .invalid_number, .value = argv[i] });
-        } else if (std.mem.eql(u8, flag, "--budget")) {
-            i += 1;
-            if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
-            got.budget = std.fmt.parseInt(u32, argv[i], 10) catch
-                return fail(.{ .kind = .invalid_number, .value = argv[i] });
         } else if (std.mem.eql(u8, flag, "--message")) {
             i += 1;
             if (i >= argv.len) return fail(.{ .kind = .missing_value, .value = flag });
@@ -1505,10 +1498,9 @@ test "parse: group join reads the session, the agent and the role" {
     try testing.expectEqualStrings("lead", a.group.role);
 }
 
-test "parse: group defaults the role to worker and the budget to the built-in one" {
+test "parse: group defaults the role to worker" {
     const a = try parse(&.{ "group", "join", "--session", "s_1", "--agent", "Engineer" });
     try testing.expectEqualStrings("worker", a.group.role);
-    try testing.expectEqual(@as(u32, 0), a.group.budget);
 }
 
 test "parse: group members needs only a session" {
@@ -1543,12 +1535,6 @@ test "parse: group without a session is refused by name" {
 
 test "parse: group refuses an unknown op by name" {
     try expectFailure(&.{ "group", "explode", "--session", "s_1" }, .group_unknown_op);
-}
-
-test "parse: group reads the hop budget" {
-    const a = try parse(&.{ "group", "next", "--session", "s_1", "--budget", "3" });
-    try testing.expectEqual(@as(u32, 3), a.group.budget);
-    try expectFailure(&.{ "group", "next", "--session", "s_1", "--budget", "lots" }, .invalid_number);
 }
 
 test "parse: storage put reads the key and the inline body" {

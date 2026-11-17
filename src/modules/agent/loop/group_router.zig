@@ -23,7 +23,6 @@ pub const Member = struct {
 
 pub const CloseReason = enum {
     no_members,
-    hop_budget,
     lead_finished,
 };
 
@@ -36,8 +35,6 @@ pub const Turn = struct {
     /// The agent whose row is the newest in the thread.
     last_speaker: []const u8,
     last_text: []const u8,
-    hops_so_far: u32,
-    hop_budget: u32,
 };
 
 /// The agent a turn with no mention belongs to.
@@ -138,8 +135,6 @@ pub fn mentions(allocator: std.mem.Allocator, text: []const u8, members: []const
 pub fn decide(allocator: std.mem.Allocator, members: []const Member, explicit_lead: []const u8, turn: Turn) !Decision {
     const lead = leadOf(members, explicit_lead) orelse return .{ .close = .no_members };
 
-    if (turn.hops_so_far >= turn.hop_budget) return .{ .close = .hop_budget };
-
     const addressed = try mentions(allocator, turn.last_text, members);
     defer allocator.free(addressed);
 
@@ -171,8 +166,6 @@ fn turnOf(last_speaker: []const u8, last_text: []const u8) Turn {
     return .{
         .last_speaker = last_speaker,
         .last_text = last_text,
-        .hops_so_far = 0,
-        .hop_budget = 8,
     };
 }
 
@@ -273,20 +266,6 @@ test "a lead that mentions nobody closes the turn" {
 test "the lead mentioning itself closes the turn instead of looping" {
     const decision = try decide(testing.allocator, &roster, "Engineer", turnOf("Engineer", "@engineer will follow up"));
     try expectCloses(.lead_finished, decision);
-}
-
-test "the hop budget closes the turn even when a mention asks for more work" {
-    var t = turnOf("Security Engineerr", "Over to you @android-engineer");
-    t.hops_so_far = 8;
-    const decision = try decide(testing.allocator, &roster, "Engineer", t);
-    try expectCloses(.hop_budget, decision);
-}
-
-test "the hop budget leaves the turn open one hop before it" {
-    var t = turnOf("Security Engineerr", "Over to you @android-engineer");
-    t.hops_so_far = 7;
-    const decision = try decide(testing.allocator, &roster, "Engineer", t);
-    try expectSpeaks("Android Engineer", decision);
 }
 
 test "an empty roster closes the turn instead of inventing a speaker" {
