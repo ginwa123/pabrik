@@ -1430,6 +1430,7 @@ pub fn saveMessage(
             if (profile_owned) |pr| {
                 if (pr.len > 0) label = pr;
             }
+            if (agentStr.len > 0 and !std.mem.eql(u8, agentStr, "Agent")) label = agentStr;
             enveloped_owned = try parsing.encodeAssistantContent(allocator, label, contentStr);
             effective_content = enveloped_owned.?;
         }
@@ -9805,6 +9806,7 @@ test "saveMessage: user envelope carries owner identity, assistant carries profi
     try db.exec(alloc, "INSERT INTO sessions (id, cwd) VALUES ('s_anon', '/tmp')", &.{});
     try db.exec(alloc, "INSERT INTO users (id, name) VALUES ('u2', '')", &.{});
     try db.exec(alloc, "INSERT INTO sessions (id, user_id, cwd) VALUES ('s_noname', 'u2', '/tmp')", &.{});
+    try db.exec(alloc, "INSERT INTO sessions (id, selected_profile_model, cwd) VALUES ('s_group', 'deepseek auto', '/tmp')", &.{});
     try saveMessage(alloc, io, &db, .{
         .session_id = "s_owned",
         .model = "MiniMax-M3",
@@ -9834,6 +9836,23 @@ test "saveMessage: user envelope carries owner identity, assistant carries profi
         .tool_call_id = null,
         .agent_name = "Agent",
         .loop_index = 0,
+        .temperature = 0.2,
+        .is_thinking = false,
+        .is_input = false,
+        .is_output = true,
+    });
+    try saveMessage(alloc, io, &db, .{
+        .session_id = "s_group",
+        .model = "MiniMax-M3",
+        .cwd = "/tmp",
+        .content = "group hey",
+        .reasoning_content = null,
+        .role = "assistant",
+        .finish_reason = null,
+        .tool_calls = null,
+        .tool_call_id = null,
+        .agent_name = "Simple Engineer",
+        .loop_index = 1,
         .temperature = 0.2,
         .is_thinking = false,
         .is_input = false,
@@ -9881,6 +9900,8 @@ test "saveMessage: user envelope carries owner identity, assistant carries profi
         .{ .session = "s_owned", .role = "user", .key = "msg", .want = "i wanna ask" },
         .{ .session = "s_owned", .role = "assistant", .key = "agent", .want = "900ribu" },
         .{ .session = "s_owned", .role = "assistant", .key = "msg", .want = "hey human" },
+        .{ .session = "s_group", .role = "assistant", .key = "agent", .want = "Simple Engineer" },
+        .{ .session = "s_group", .role = "assistant", .key = "msg", .want = "group hey" },
         .{ .session = "s_anon", .role = "user", .key = "user", .want = "" },
         .{ .session = "s_anon", .role = "user", .key = "name", .want = "Agent" },
         .{ .session = "s_anon", .role = "user", .key = "msg", .want = "anon hi" },
