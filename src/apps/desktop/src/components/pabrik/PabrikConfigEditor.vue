@@ -309,6 +309,14 @@ function syncFromConfig() {
     enabled: p.enabled ?? true,
   }))
   activeAgent.value = c.active_profile ?? null
+  /**
+   * A stored pointer at a switched-off agent is not an active agent: show none, and record the clear so the next
+   * save overwrites the stale name instead of leaving the contradiction on disk.
+   */
+  if (agentsList.value.some((a) => a.name === activeAgent.value && !a.enabled)) {
+    activeAgent.value = null
+    c.active_profile = ''
+  }
   agentsTouched.value = false
   mcpServersList.value = parseMcpServers(c.mcp_servers)
   // Web search providers hydrate with whatever `key` the backend sent, which may be a MASK rather than the secret.
@@ -601,9 +609,16 @@ function duplicateAgent(name: string) {
   emit('notification', `Copied "${name}" to "${copyName}"`, 'success')
 }
 
+// Clearing writes `active_profile: ""` — an ABSENT key means "no change" to the backend, so omitting it would leave the old agent active.
+function dropActiveAgent() {
+  activeAgent.value = null
+  if (config.value) config.value.active_profile = ''
+}
+
 function setAgentEnabled(name: string, enabled: boolean) {
   agentsTouched.value = true
   agentsList.value = agentsList.value.map((a) => (a.name === name ? { ...a, enabled } : a))
+  if (!enabled && activeAgent.value === name) dropActiveAgent()
   syncToConfig()
 }
 
@@ -752,11 +767,9 @@ async function setActiveAgent(name: string) {
   emit('notification', `Active agent set to "${name}"`, 'success')
 }
 
-// Clearing writes `active_profile: ""` — an ABSENT key means "no change" to the backend, so omitting it would leave the old agent active.
 async function clearActiveAgent() {
   const previous = activeAgent.value
-  activeAgent.value = null
-  if (config.value) config.value.active_profile = ''
+  dropActiveAgent()
   syncToConfig()
   if ((await persistNow()) === null) {
     emit('notification', `Active agent cleared — using top-level config`, 'success')

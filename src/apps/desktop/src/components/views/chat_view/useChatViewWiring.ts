@@ -142,6 +142,7 @@ export function useChatViewWiring(deps: ChatViewWiringDeps) {
     selectedAgent,
     loadAgents,
     effectiveAgent,
+    blockedAgent,
     namesConfiguredAgent,
     effectiveProfileUrlStyle,
     closeOnOutsideClick,

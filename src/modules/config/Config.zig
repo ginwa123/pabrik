@@ -708,10 +708,10 @@ pub const LlmConfig = struct {
         // resolveSessionAgentCompat walks selected→active; here there is no session context, so selection is just active_profile.
         var p: ?LlmAgent = config.resolveSessionAgentCompat("");
         if (p == null) {
-            // No active profile (or it names a missing entry): fall back to the first profile with a non-empty model.
+            // No enabled active profile (or it names a missing entry): fall back to the first ENABLED profile with a non-empty model.
             var it = config.agents.iterator();
             while (it.next()) |entry| {
-                if (entry.value_ptr.model.len > 0) {
+                if (entry.value_ptr.enabled and entry.value_ptr.model.len > 0) {
                     p = entry.value_ptr.*;
                     break;
                 }
@@ -2104,12 +2104,18 @@ pub const LlmConfig = struct {
         thinking_budget_tokens: ?u32,
         /// OpenAI reasoning effort ("low"/"medium"/"high"/"auto"; null = omit).
         reasoning_effort: ?[]const u8,
+        /// Which slot of the cascade was consulted first. A field the winning slot left empty came from the next slot down, so this names the START of the walk, not the origin of every value.
+        source: Slot = .top_level,
+
+        pub const Slot = enum { selected, active, top_level };
     };
 
-    /// Internal: getAgent that treats an empty name as a miss so the cascade can pass `active_profile orelse ""` without branching.
-    fn getAgentIfSet(self: *const LlmConfig, name: []const u8) ?LlmAgent {
+    /// Internal: the cascade's only lookup. An empty name and a switched-off agent are both a MISS, so a disabled profile can never win a slot.
+    fn getEnabledAgentIfSet(self: *const LlmConfig, name: []const u8) ?LlmAgent {
         if (name.len == 0) return null;
-        return self.getAgent(name);
+        const agent = self.getAgent(name) orelse return null;
+        if (!agent.enabled) return null;
+        return agent;
     }
 
     /// THE canonical profile cascade — ONE implementation for the whole codebase.
@@ -2117,9 +2123,9 @@ pub const LlmConfig = struct {
         self: *const LlmConfig,
         selected_profile_model: []const u8,
     ) EffectiveAgent {
-        const sel = self.getAgentIfSet(selected_profile_model);
+        const sel = self.getEnabledAgentIfSet(selected_profile_model);
         const act = if (sel == null)
-            self.getAgentIfSet(self.active_agent orelse "")
+            self.getEnabledAgentIfSet(self.active_agent orelse "")
         else
             null;
 
@@ -2211,6 +2217,7 @@ pub const LlmConfig = struct {
             .thinking_adaptive = std.mem.eql(u8, thinking_str, "auto"),
             .thinking_budget_tokens = thinking_budget_tokens,
             .reasoning_effort = reasoning_effort,
+            .source = if (sel != null) .selected else if (act != null) .active else .top_level,
         };
     }
 
@@ -2219,13 +2226,8 @@ pub const LlmConfig = struct {
         self: *const LlmConfig,
         selected_profile_model: []const u8,
     ) ?LlmAgent {
-        if (self.getAgentIfSet(selected_profile_model)) |p| return p;
-        if (self.active_agent) |ap| {
-            if (ap.len > 0) {
-                if (self.getAgent(ap)) |p| return p;
-            }
-        }
-        return null;
+        if (self.getEnabledAgentIfSet(selected_profile_model)) |p| return p;
+        return self.getEnabledAgentIfSet(self.active_agent orelse "");
     }
 
     /// Resolve an agent by name for a spawn.
@@ -2667,6 +2669,44 @@ test "resolveEffectiveAgent: missing selected falls to active_profile" {
 
     const e = cfg.resolveEffectiveAgent("does_not_exist");
     try std.testing.expectEqualStrings("alpha-model", e.model);
+    try std.testing.expectEqual(LlmConfig.EffectiveAgent.Slot.active, e.source);
+}
+
+test "resolveEffectiveAgent: a switched-off active agent never wins the active slot" {
+    const allocator = std.testing.allocator;
+    var cfg = try cascadeFixture(allocator);
+    defer cfg.deinit();
+    cfg.active_agent = try std.testing.allocator.dupe(u8, "alpha");
+    cfg.agents.getPtr("alpha").?.enabled = false;
+
+    const e = cfg.resolveEffectiveAgent("");
+    try std.testing.expectEqualStrings("top-model", e.model);
+    try std.testing.expectEqualStrings("top-key", e.api_key);
+    try std.testing.expectEqualStrings("https://top", e.base_url);
+    try std.testing.expectEqual(LlmConfig.EffectiveAgent.Slot.top_level, e.source);
+}
+
+test "resolveEffectiveAgent: a switched-off selection falls through to the enabled active agent" {
+    const allocator = std.testing.allocator;
+    var cfg = try cascadeFixture(allocator);
+    defer cfg.deinit();
+    cfg.active_agent = try std.testing.allocator.dupe(u8, "partial");
+    cfg.agents.getPtr("alpha").?.enabled = false;
+
+    const e = cfg.resolveEffectiveAgent("alpha");
+    try std.testing.expectEqualStrings("partial-model", e.model);
+}
+
+test "resolveSessionAgentCompat: a switched-off agent resolves in neither slot" {
+    const allocator = std.testing.allocator;
+    var cfg = try cascadeFixture(allocator);
+    defer cfg.deinit();
+    cfg.active_agent = try std.testing.allocator.dupe(u8, "alpha");
+    cfg.agents.getPtr("alpha").?.enabled = false;
+
+    try std.testing.expect(cfg.resolveSessionAgentCompat("alpha") == null);
+    try std.testing.expect(cfg.resolveSessionAgentCompat("") == null);
+    try std.testing.expectEqualStrings("partial-model", cfg.resolveSessionAgentCompat("partial").?.model);
 }
 
 test "resolveEffectiveAgent: derived fields for off / garbage thinking strings" {
@@ -4603,6 +4643,63 @@ test "backfill: no profiles at all → fields stay empty (first-run shape)" {
     try std.testing.expectEqualStrings("", cfg.model);
     try std.testing.expectEqualStrings("", cfg.base_url);
     try std.testing.expectEqualStrings("", cfg.api_key);
+}
+
+test "backfill: a switched-off active agent keeps its model off the top level" {
+    const allocator = std.testing.allocator;
+
+    const json_body =
+        \\{
+        \\  "profiles_models": {
+        \\    "retired": {
+        \\      "model": "retired-model",
+        \\      "base_url": "https://retired.example.com",
+        \\      "api_key": "retired-key",
+        \\      "enabled": false
+        \\    }
+        \\  },
+        \\  "active_profile": "retired"
+        \\}
+    ;
+
+    var cfg = try writeAndRead(allocator, std.testing.io, json_body);
+    defer cfg.deinit();
+
+    try std.testing.expectEqualStrings("", cfg.model);
+    try std.testing.expectEqualStrings("", cfg.base_url);
+    try std.testing.expectEqualStrings("", cfg.api_key);
+}
+
+test "backfill: a switched-off active agent hands the top level to the enabled one" {
+    const allocator = std.testing.allocator;
+
+    const json_body =
+        \\{
+        \\  "profiles_models": {
+        \\    "retired": {
+        \\      "model": "retired-model",
+        \\      "base_url": "https://retired.example.com",
+        \\      "api_key": "retired-key",
+        \\      "enabled": false
+        \\    },
+        \\    "live": {
+        \\      "model": "live-model",
+        \\      "base_url": "https://live.example.com",
+        \\      "api_key": "live-key",
+        \\      "url_style": "anthropic"
+        \\    }
+        \\  },
+        \\  "active_profile": "retired"
+        \\}
+    ;
+
+    var cfg = try writeAndRead(allocator, std.testing.io, json_body);
+    defer cfg.deinit();
+
+    try std.testing.expectEqualStrings("live-model", cfg.model);
+    try std.testing.expectEqualStrings("https://live.example.com", cfg.base_url);
+    try std.testing.expectEqualStrings("live-key", cfg.api_key);
+    try std.testing.expectEqualStrings("anthropic", cfg.url_style);
 }
 
 test "backfill: active_profile names a missing profile → falls back to first entry" {

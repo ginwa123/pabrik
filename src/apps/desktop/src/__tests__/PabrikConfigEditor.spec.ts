@@ -688,6 +688,60 @@ describe('PabrikConfigEditor (orchestrator)', () => {
     expect(profiles['retired copy']!.enabled).toBe(false)
   })
 
+  it('disabling the active agent clears it and writes active_profile:""', async () => {
+    mockGet.mockResolvedValueOnce({
+      profiles: { work: { model: 'm' }, home: { model: 'm2' } },
+      active_profile: 'work',
+    })
+    mockSave.mockResolvedValueOnce({ success: true })
+    const wrapper = await mountAt('agents')
+
+    expect(wrapper.find('[data-testid="active-pill"]').text()).toBe('work')
+
+    await wrapper.find('[data-testid="agent-enabled-switch-work"]').trigger('click')
+    await flushPromises()
+    await settleAutosave()
+
+    expect(wrapper.find('[data-testid="active-pill"]').exists()).toBe(false)
+    const saved = mockSave.mock.calls.at(-1)![0] as Record<string, unknown>
+    expect(saved.active_profile).toBe('')
+    expect((saved.profiles as Record<string, Record<string, unknown>>).work!.enabled).toBe(false)
+  })
+
+  it('disabling an agent that is not the active one keeps the active pointer', async () => {
+    mockGet.mockResolvedValueOnce({
+      profiles: { work: { model: 'm' }, home: { model: 'm2' } },
+      active_profile: 'home',
+    })
+    mockSave.mockResolvedValueOnce({ success: true })
+    const wrapper = await mountAt('agents')
+
+    await wrapper.find('[data-testid="agent-enabled-switch-work"]').trigger('click')
+    await flushPromises()
+    await settleAutosave()
+
+    expect(wrapper.find('[data-testid="active-pill"]').text()).toBe('home')
+    expect((mockSave.mock.calls.at(-1)![0] as Record<string, unknown>).active_profile).toBe('home')
+  })
+
+  it('shows no active agent when the stored pointer names a switched-off agent, and repairs the stored config', async () => {
+    mockGet.mockResolvedValueOnce({
+      profiles: { retired: { model: 'm', enabled: false }, live: { model: 'm2' } },
+      active_profile: 'retired',
+    })
+    mockSave.mockResolvedValueOnce({ success: true })
+    const wrapper = await mountAt('agents')
+
+    expect(wrapper.find('[data-testid="active-pill"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('(none — pick one below)')
+
+    await wrapper.find('[data-testid="duplicate-btn-live"]').trigger('click')
+    await flushPromises()
+    await settleAutosave()
+
+    expect((mockSave.mock.calls.at(-1)![0] as Record<string, unknown>).active_profile).toBe('')
+  })
+
   it('duplicate copies the whole agent under a "<name> copy" key', async () => {
     mockGet.mockResolvedValueOnce({
       profiles: { work: { model: 'gpt-4o', system_prompt: 'be strict' } },
