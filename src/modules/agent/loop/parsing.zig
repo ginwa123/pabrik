@@ -318,6 +318,13 @@ pub fn wireAgentName(allocator: std.mem.Allocator, column: []const u8, envelope:
     return author orelse try allocator.dupe(u8, column);
 }
 
+/// The agent answering a turn: the session's last named speaker, or its profile when that column still holds the placeholder.
+pub fn speakerName(current_agent: []const u8, session_profile: []const u8) []const u8 {
+    if (session_profile.len == 0) return current_agent;
+    if (current_agent.len > 0 and !std.mem.eql(u8, current_agent, "Agent")) return current_agent;
+    return session_profile;
+}
+
 /// True when `raw` already parses as a chat envelope (object with a string `msg` plus `user` or `model`).
 pub fn isChatEnvelope(allocator: std.mem.Allocator, raw: []const u8) bool {
     const trimmed = std.mem.trim(u8, raw, &std.ascii.whitespace);
@@ -757,6 +764,19 @@ test "wire agent falls back to the column when the content is not an envelope" {
     const name = try wireAgentName(allocator, "Agent", "plain assistant text");
     defer allocator.free(name);
     try testing.expectEqualStrings("Agent", name);
+}
+
+test "speaker name replaces the placeholder with the session profile" {
+    try testing.expectEqualStrings("deepseek auto", speakerName("Agent", "deepseek auto"));
+    try testing.expectEqualStrings("deepseek auto", speakerName("", "deepseek auto"));
+}
+
+test "speaker name keeps an agent the column already names" {
+    try testing.expectEqualStrings("Simple Engineer", speakerName("Simple Engineer", "deepseek auto"));
+}
+
+test "speaker name falls back to the placeholder when the session has no profile" {
+    try testing.expectEqualStrings("Agent", speakerName("Agent", ""));
 }
 
 test "a legacy model envelope still unwraps to its msg" {

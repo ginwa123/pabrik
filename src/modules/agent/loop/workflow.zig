@@ -1099,13 +1099,16 @@ pub fn runAgenticMultiStepnew(di: RunAgenticMultiStepInput, params: RunParamsNew
             if (config.getAgent(group_speaker)) |member| group_system_prompt = member.system_prompt;
         }
 
+        // `current_agent` reads the last row's own `agent`, which is the placeholder on a fresh session — the chat's real speaker is its profile.
+        const session_speaker: []const u8 = parsing_mod.speakerName(current_agent, live_selected_profile_model);
+
         // For sub-agent flow: replace `current_agent` (the session's last `agent_name` from llm_history) with the resolved sub-agent name.
         const effective_agent_name: []const u8 = if (sub_agent_session_name.len > 0)
             sub_agent_session_name
         else if (group_speaker.len > 0)
             group_speaker
         else
-            current_agent;
+            session_speaker;
 
         // Sub-agent's specialized system_prompt (from SubAgentConfig.system_prompt) is injected as the `## Your Active Agent Configuration` section of build_agent_prompt.
         const sub_agent_system_prompt: []const u8 = if (params.sub_agent_overrides) |ov|
