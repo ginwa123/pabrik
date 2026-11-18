@@ -815,7 +815,7 @@ pub fn handle_tool(
                     .finish_reason = agent.FinishReason.tool.to_str(),
                     .tool_calls_json = "",
                     .tool_call_id = tool_call.id,
-                    .agent = current_agent_state.agent,
+                    .agent = current_agent_for_save,
                     .loop_index = loop_counter,
                     .temperature = agent_temperature.*,
                     .is_thinking = isThinking.*,
