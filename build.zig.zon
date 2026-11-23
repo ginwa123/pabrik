@@ -190,12 +190,24 @@
         //   - Squash-merging the same tree keeps the SAME `.hash` — the hash
         //     is over the file tree, not the commit — so only the `#<sha>`
         //     moves. Do not "re-derive" the hash just because the SHA changed.
+        // 610d149 = kabelweb #13, "an exclusive listener, and one no child can
+        // inherit": on Windows the bind option is SO_EXCLUSIVEADDRUSE instead
+        // of SO_REUSEADDR (which there lets a second socket take a port someone
+        // is already LISTENING on), the listener is created with
+        // WSA_FLAG_NO_HANDLE_INHERIT, and the POSIX socket gets FD_CLOEXEC.
+        // Without it a pabrik that Ctrl+C left half-dead kept the port, the
+        // next pabrik bound it anyway and served nothing. The same merge also
+        // stops test probes leaking a listener through the CRT's close() and
+        // stops one hijack test depending on a Windows wake-up that does not
+        // arrive (both invisible while the hijack was allowed). windows-latest
+        // on the pre-squash head: 721/735 server + 57/61 client, 4/4 jobs.
+        //
         // 60f9b07 = HEAD on the client's Method enum, so the S3 backend can
         // ask for object metadata without downloading the object. It is the
         // one verb the enum was missing; `perform` sets CURLOPT_NOBODY for it.
         .kabelweb = .{
-            .url = "git+https://github.com/ginwa123/kabelweb.git#60f9b07dc7d9341b871d21dc7fca0591e6e3c55a",
-            .hash = "kabelweb-0.0.0-vhZam6iIHQBkMqsaYIDTWhDqatJJpnmvYThtjIwWZWaY",
+            .url = "git+https://github.com/ginwa123/kabelweb.git#610d1490889324ad67fde5d7c0d5fb56626e1090",
+            .hash = "kabelweb-0.0.0-vhZamx-AkACiXA8iCYR_sC5dOOJIUfOeu61nc8ZUsdSf",
         },
         // The Zig linter (github.com/ginwa123/zglint), moved out of
         // `src/modules/zginlint/`. A std-only package with no dependencies of

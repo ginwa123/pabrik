@@ -12,7 +12,7 @@
             .path = "../../../zig-pkg/databases-0.0.0-vy-BCNyYBgAr0Z08ttKRFycgK5rKe7Ex_Fb6ZgtnYL8e",
         },
         .kabelweb = .{
-            .path = "../../../zig-pkg/kabelweb-0.0.0-vhZam6iIHQBkMqsaYIDTWhDqatJJpnmvYThtjIwWZWaY",
+            .path = "../../../zig-pkg/kabelweb-0.0.0-vhZamx-AkACiXA8iCYR_sC5dOOJIUfOeu61nc8ZUsdSf",
         },
     },
     .paths = .{

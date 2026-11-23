@@ -51,6 +51,9 @@ pub fn main(init: std.process.Init) !void {
     if (try cli_dispatch.dispatchServiceSubcommand(allocator, io, environment, init)) return;
     if (try db_cli.dispatchDbSubcommand(allocator, io, environment, init)) return;
     if (try cli_dispatch.dispatchCreateAdmin(allocator, io, environment, init)) return;
+
+    _ = pabrikcore.boot_process_job.adopt();
+
     // Headless mode boots the whole backend and runs a turn WITHOUT binding a port.
     if (try headless_dispatch.dispatchHeadless(allocator, io, environment, init)) return;
 
