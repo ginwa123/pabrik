@@ -262,6 +262,7 @@ pub const static_files = @import("modules/static_files.zig");
 pub const metrics_mod = @import("modules/metrics/metrics.zig");
 // Boot phases extracted from main.zig (refactor-main-zig): re-exported so the exe module reaches them via pabrikcore.* without @import'ing the files directly …
 pub const boot_shutdown = @import("boot/shutdown.zig");
+pub const boot_process_job = @import("boot/process_job.zig");
 pub const boot_cli_dispatch = @import("boot/cli_dispatch.zig");
 pub const boot_server_boot = @import("boot/server_boot.zig");
 /// Where the secret-sealing master key comes from (env var, else a 0600 file).
