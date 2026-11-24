@@ -1222,6 +1222,7 @@ fn installVcpkgDlls(b: *std.Build, parent: *std.Build.Step) void {
         "libcrypto-3-x64.dll",
         "libpq.dll",
         "z.dll",
+        "libz.dll",
         "lz4.dll",
         "legacy.dll",
         "libecpg.dll",
