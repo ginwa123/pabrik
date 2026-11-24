@@ -637,6 +637,30 @@ jobs:
           }
           Write-Host "✓ all binaries present + valid PE32+ x86_64"
 
+          # A shipped exe must load with only the DLLs staged beside it.
+          $savedPath = $env:PATH
+          try {
+            $env:PATH = @("$env:SystemRoot\System32", "$env:SystemRoot\System32\downlevel", "$env:SystemRoot") -join ';'
+            foreach ($bin in @('pabrik', 'pabrik-desktop')) {
+              $exe = "zig-out\bin\$bin.exe"
+              $stdout = Join-Path $env:RUNNER_TEMP "$bin-help.stdout.log"
+              $stderr = Join-Path $env:RUNNER_TEMP "$bin-help.stderr.log"
+              try {
+                $proc = Start-Process -FilePath $exe -ArgumentList '--help' -Wait -PassThru -NoNewWindow -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+                if ($proc.ExitCode -ne 0) { throw "$bin.exe --help exited $($proc.ExitCode)" }
+                Write-Host "✓ $bin.exe --help loaded with only staged DLLs"
+              } catch {
+                $dlls = @(Get-ChildItem 'zig-out\bin\*.dll' -ErrorAction SilentlyContinue | ForEach-Object Name)
+                Write-Host ("staged DLLs: " + ($dlls -join ', '))
+                if (Test-Path -LiteralPath $stdout) { Get-Content -LiteralPath $stdout }
+                if (Test-Path -LiteralPath $stderr) { Get-Content -LiteralPath $stderr }
+                throw
+              }
+            }
+          } finally {
+            $env:PATH = $savedPath
+          }
+
       - name: "Smoke test: criteria pass"
         if: inputs.target_step != '__SKIP__'
         shell: bash
